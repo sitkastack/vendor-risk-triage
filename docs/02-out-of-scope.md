@@ -18,17 +18,17 @@ What follows is the boundary, written down. Each exclusion names the decision th
 
 Problem Definition establishes that every disposition the system recommends is a human decision. These are the specific decisions that stay with people and functions other than the triage agent.
 
-**1. The system does not approve vendor procurement.** It classifies AI risk and recommends a disposition; the choice to bring a vendor in runs far wider than that risk. Procurement and the business sponsor own the procurement decision.
+**1. Procurement decisions stay with procurement.** The system classifies AI risk and recommends a disposition, but the choice to bring a vendor in runs far wider than that risk. Procurement and the business sponsor own it.
 
 **2. Legal liability stays with legal.** The system can flag exposure in a vendor's data handling, but contractual interpretation and fault allocation are in-house counsel's work, and they need to remain so even when the triage record makes the issues feel clear.
 
 **3. Security validation is the InfoSec team's work.** The system reads a vendor's security claims; it does not test them through penetration tests, SOC 2 review, or control verification. A clean triage record is a statement about disclosed AI practices, not about whether the vendor's controls actually work.
 
-**4. The system does not assess the financial risk of the vendor.** It scopes AI risk, not the vendor's balance sheet, business continuity, or concentration risk. Procurement and finance own financial risk assessment.
+**4. Financial risk belongs to procurement and finance.** The system scopes AI risk, not the vendor's balance sheet, business continuity, or concentration risk. A favorable AI risk tier says nothing about whether the vendor is financially sound enough to rely on.
 
 **5. Exceptions belong to accountable humans.** When a vendor lands in a tier that would block or condition an engagement, the agent only documents the risk. An accountable risk owner with documented authority owns the exception, with the rationale recorded and the trade-off named.
 
-**6. The system does not retain custody of vendor evidence.** It records its reasoning but is not the system of record for the underlying questionnaires, reports, and contracts. The document management system or GRC platform retains that evidence.
+**6. The system of record is somewhere else.** The agent records its reasoning but is not the system of record for the underlying questionnaires, reports, and contracts. The document management system or GRC platform retains that evidence; the triage record references it rather than replacing it.
 
 **7. Termination is a vendor management decision, not a triage signal.** The agent can flag risks serious enough to end a relationship, but it does not trigger offboarding. The contractual obligations, transition planning, and continuity consequences of termination belong to vendor management with input from the business sponsor.
 
