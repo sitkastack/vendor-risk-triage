@@ -1,26 +1,18 @@
 # Out-of-Scope
 
-This document lists what the vendor-risk-triage system does not do. It is the companion to 00-problem-definition.md: that document fixes the single decision the system supports, and this one draws the line around everything it leaves to someone else.
+This document is the companion to 00-problem-definition.md. That document fixes the single decision the system supports. This one draws the line around everything it leaves to someone else.
 
 ## Why this document exists
 
 Most AI projects never write this document. The team is busy proving the thing works, the demo lands, and scope lives in people's heads or a Slack thread that scrolls away. Everyone in the room already knows what the system is not for, so no one records it.
 
-The trouble starts when people who were not in that room start using the output. A risk analyst reads a clean triage record as sign-off. A sponsor sees "low risk" and assumes legal cleared the contract. The system claimed neither, but an unstated boundary reads as coverage. This is the failure mode I have watched up close: capability assumption, where a tool inherits authority no one granted it. The vendor goes live, and months later someone is explaining to an auditor why a triage note was treated as a control.
+The trouble starts when people who were not in that room start using the output. A risk analyst reads a clean triage record as sign-off. A sponsor sees "low risk" and assumes legal cleared the contract. The system claimed neither, but the failure mode has a name: capability assumption, where a tool inherits authority no one granted it. The vendor goes live, and months later someone is explaining to an auditor why a triage note was treated as a control.
 
-A short example to make this concrete. Imagine the triage agent reviews a customer-service platform vendor and returns a low risk tier: the vendor's AI summarizes internal agent notes only, no customer data leaves the environment, retention terms are clean. A month later, the InfoSec team runs a routine penetration test against the same vendor and finds a SQL injection vulnerability in the admin console. Both findings are correct. The triage agent was right about the AI risk in its scope; the pen test was right about the security risk in its scope. Neither contradicts the other. The triage record never claimed to assess application security, and the InfoSec finding never reopened the AI risk question. This is the system working as intended. The cost of not having that boundary written down is that someone reads the low risk tier as "the vendor is safe" and uses it to defer the pen test, or reads the pen test finding as "the vendor is unsafe" and reopens the AI engagement on the wrong grounds. The out-of-scope document is what keeps both scopes intact.
+An unstated boundary reads as coverage.
 
 So I treat the out-of-scope document as the highest-leverage artifact in the build. It forces explicit ownership of every decision the system does not make, the only reliable way to keep those decisions from drifting to the system by default. Every Phase 0 here ships one before any code is written, because naming the boundary first is cheaper than discovering it in production.
 
-## Categories of exclusion
-
-Out-of-scope items are not all the same kind of thing. This document sorts them into five categories, each a different way a system can be asked to do more than it should:
-
-1. **Decisions the system does not make:** choices that stay with named people and functions.
-2. **Populations the system does not cover:** vendors and AI arrangements outside the agent's intake.
-3. **Time periods and scope boundaries:** limits on when a decision applies and how long it holds.
-4. **Integration points the system does not have:** connections the agent deliberately does not make.
-5. **Levels of assurance the system does not provide:** guarantees a record may look like it offers but does not.
+What follows is the boundary, written down. Each exclusion names the decision the triage agent does not make, and the function or named person who owns that decision instead. Read these as load-bearing, not as a disclaimer.
 
 ## Decisions this system does not make
 
@@ -28,19 +20,17 @@ Problem Definition establishes that every disposition the system recommends is a
 
 **1. The system does not approve vendor procurement.** It classifies AI risk and recommends a disposition; the choice to bring a vendor in runs far wider than that risk. Procurement and the business sponsor own the procurement decision.
 
-**2. The system does not assign legal liability.** It can flag exposure in a vendor's data handling, but it does not interpret contracts or allocate fault. In-house counsel, with external advisors where warranted, owns that determination.
+**2. Legal liability stays with legal.** The system can flag exposure in a vendor's data handling, but contractual interpretation and fault allocation are in-house counsel's work, and they need to remain so even when the triage record makes the issues feel clear.
 
-**3. The system does not perform vendor security validation.** It reads a vendor's security claims; it does not test them through penetration tests, SOC 2 review, or control verification. The InfoSec team owns security validation.
+**3. Security validation is the InfoSec team's work.** The system reads a vendor's security claims; it does not test them through penetration tests, SOC 2 review, or control verification. A clean triage record is a statement about disclosed AI practices, not about whether the vendor's controls actually work.
 
 **4. The system does not assess the financial risk of the vendor.** It scopes AI risk, not the vendor's balance sheet, business continuity, or concentration risk. Procurement and finance own financial risk assessment.
 
-**5. The system does not make exception decisions.** When a vendor lands in a tier that would block or condition an engagement, the agent only documents the risk. An accountable risk owner with documented authority owns the exception, with the rationale recorded.
+**5. Exceptions belong to accountable humans.** When a vendor lands in a tier that would block or condition an engagement, the agent only documents the risk. An accountable risk owner with documented authority owns the exception, with the rationale recorded and the trade-off named.
 
 **6. The system does not retain custody of vendor evidence.** It records its reasoning but is not the system of record for the underlying questionnaires, reports, and contracts. The document management system or GRC platform retains that evidence.
 
-**7. The system does not generate vendor questionnaires.** It consumes questionnaire responses; it does not design the questions or decide which vendors receive them. The vendor management or procurement function owns questionnaire design and distribution.
-
-**8. The system does not make termination decisions.** It can flag risks serious enough to end a relationship, but it does not trigger offboarding, which carries contractual and continuity consequences. Vendor management, with input from the business sponsor, owns termination.
+**7. Termination is a vendor management decision, not a triage signal.** The agent can flag risks serious enough to end a relationship, but it does not trigger offboarding. The contractual obligations, transition planning, and continuity consequences of termination belong to vendor management with input from the business sponsor.
 
 ## Populations this system does not cover
 
@@ -48,7 +38,7 @@ Problem Definition establishes that every disposition the system recommends is a
 
 **2. Internally-developed AI systems.** This system covers third-party AI only; in-house models raise builder-side questions a buyer's lens does not fit. A separate governance process, owned by the teams that build and operate them, covers internal builds.
 
-**3. Foundation model providers being used directly.** Consuming a foundation model directly through an API or platform agreement is a platform decision with broad downstream reach, not a single vendor intake. The platform or architecture function that owns the relationship owns that review.
+**3. Foundation model providers being used directly.** Consuming a foundation model directly through an API or platform agreement is a platform decision with broad downstream reach, not a single vendor intake. Senior engineering or technology leadership owns that review, typically with input from security, legal, and the relevant business sponsor.
 
 **4. Open-source AI components without commercial vendor backing.** The agent assumes a commercial counterparty to question and hold accountable; open-source AI shifts the questions toward provenance, maintenance, and license terms. The engineering and security functions that maintain those components own that adoption. FRFIs and other regulated organizations retain governance obligations for open-source AI in their environment; this system does not satisfy those obligations.
 
@@ -72,7 +62,9 @@ Problem Definition establishes that every disposition the system recommends is a
 
 **3. No automated alerts to vendors.** The triage process is internal: the system does not email vendors, request clarifications, or notify them of an outcome. The procurement or vendor management team owns all vendor-facing communication.
 
-**4. No integration with the customer-facing application stack.** This system supports vendor intake decisions, not runtime decisions inside customer-facing applications, and makes no calls during live customer interactions. The product and engineering teams own those runtime decisions.
+**4. No integration with the customer-facing application stack.** This system supports vendor intake decisions, not runtime decisions inside customer-facing applications. The product and engineering teams own those runtime decisions.
+
+The exclusions above describe what the system does not do. The exclusions below describe what the system's outputs do not guarantee, which is a different category of out-of-scope and the one most likely to be misread under audit.
 
 ## Levels of assurance this system does not provide
 
@@ -86,16 +78,16 @@ Problem Definition establishes that every disposition the system recommends is a
 
 ## When this list should be revisited
 
-This list is not fixed. New regulatory requirements, new vendor patterns, and lessons from running the process push items in or out of scope over time. For most mid-market organizations a quarterly revisit is reasonable: often enough to catch real change, rare enough to avoid busywork. The list also contracts as the system grows, so when a later phase adds a capability the system genuinely supports, the matching exclusion comes off and the change gets recorded.
+New regulatory requirements, new vendor patterns, and lessons from operating the process push items in and out of scope. A quarterly revisit is reasonable for most mid-market organizations. Specific events should also trigger an off-cycle revisit: a new regulatory framework takes effect (OSFI E-23 in May 2027 is the most concrete near-term example); a vendor pattern emerges that does not fit existing categories, such as cross-system AI agents or vendor-of-vendor AI exposure; or an audit finding surfaces a boundary issue this list did not anticipate.
 
-## Limitations of this document specifically
+The list also contracts as the system grows. When a later phase adds a capability the system genuinely supports, the matching exclusion comes off and the change gets recorded in the same commit history as the new capability.
 
-This list reflects the v0.1 reference implementation. A real deployment will carry its own context-specific exclusions, shaped by sector, regulators, and internal structure, that this document cannot anticipate. If you have run vendor AI risk in the field and see an exclusion that belongs here, I would value the example as a GitHub issue.
+## Limitations of this document
+
+This list reflects the v0.1 reference implementation. Real deployments will carry their own context-specific exclusions, shaped by sector, regulators, and internal structure that this document cannot anticipate.
+
+The most useful feedback comes from practitioners who have seen the failure modes I haven't. If an exclusion belongs here and isn't, open a GitHub issue.
 
 ## Status
 
-Status: Phase 0 (Discovery & Risk Classification) in progress.
-
-Roadmap: https://sitkastack.com/roadmap
-
-Last updated: Wednesday, May 20, 2026
+Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, in progress as of May 20, 2026. Roadmap: sitkastack.com/roadmap.
