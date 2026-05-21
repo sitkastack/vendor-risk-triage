@@ -36,7 +36,7 @@ The decision failures are the most damaging operationally. If a vendor's AI shap
 
 ## Why this work is being published openly
 
-I'm publishing this as the first reference implementation in sitkastack because the problem is close to universal, the timing is concrete, and the building blocks generalize. Nearly every mid-market regulated company has a vendor list filling with AI features and no defined way to assess them. The regulatory forcing functions above are live or dated within eighteen months, with OSFI E-23 carrying a hard 2027 deadline. Structured triage with documented reasoning, audit logging, human-in-the-loop review, and turning unstructured documents into structured decisions are the patterns most AI governance problems need, so a working example here helps well beyond vendor intake.
+I'm publishing this as the first reference implementation in the sitkastack Framework because the problem is close to universal, the timing is concrete, and the building blocks generalize. Nearly every mid-market regulated company has a vendor list filling with AI features and no defined way to assess them. The regulatory forcing functions above are live or dated within eighteen months, with OSFI E-23 carrying a hard 2027 deadline. Structured triage with documented reasoning, audit logging, human-in-the-loop review, and turning unstructured documents into structured decisions are the patterns most AI governance problems need, so a working example here helps well beyond vendor intake.
 
 ## Limitations of this document
 
