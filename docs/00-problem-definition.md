@@ -30,11 +30,9 @@ The quiet failures cost the most. A vendor overstates its AI capabilities in a q
 
 The data failures are the most legible to regulators. If a vendor's AI trains on your customer data without proper disclosure, you carry contractual exposure and potential violations of applicable privacy law (PIPEDA, provincial private-sector legislation, GDPR, or sectoral equivalents), and you may not find out until the vendor's own breach or audit surfaces it. The disclosure failure is theirs. The regulated relationship with your customers is yours.
 
-The decision failures are the most damaging operationally. If a vendor's AI shapes customer-affecting outcomes you never authorized, and the outputs are biased, wrong, or unexplainable, the operational and reputational damage lands on you.
+The decision failures are the most damaging operationally. If a vendor's AI shapes customer-affecting outcomes you never authorized, and the outputs are biased, wrong, or unexplainable, the operational and reputational damage lands on you. The same holds when a vendor's AI fails its own audit while you rely on it: their finding becomes yours.
 
 "The vendor's model did it" is not a defense regulators accept.
-
-The same holds when a vendor's AI fails its own audit while you rely on it: their finding becomes yours.
 
 ## Why this work is being published openly
 
@@ -42,8 +40,12 @@ I'm publishing this as the first reference implementation in sitkastack because 
 
 ## Limitations of this document
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in vendor risk, model validation, or regulatory examination point out what I have missed. Your regulatory context, sector, and internal controls will require adaptation. Treat it as a starting point you adjust, not a finished product you adopt unchanged. Production deployment requires institution-specific validation, including independent review where OSFI E-23, SR 11-7, or equivalent governance frameworks apply. Detailed exclusions, including what the system does not decide and who owns each excluded decision instead, live in 02-out-of-scope.md.
+This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in vendor risk, model validation, or regulatory examination point out what I have missed.
+
+Your regulatory context, sector, and internal controls will require adaptation. Treat it as a starting point you adjust, not a finished product you adopt unchanged. Production deployment requires institution-specific validation, including independent review where OSFI E-23, SR 11-7, or equivalent governance frameworks apply.
+
+Detailed exclusions, including what the system does not decide and who owns each excluded decision instead, live in 02-out-of-scope.md.
 
 ## Status
 
-This document is part of Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, in progress as of May 20, 2026. The full roadmap lives at sitkastack.com/roadmap.
+Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, in progress as of May 20, 2026. Roadmap: sitkastack.com/roadmap.
