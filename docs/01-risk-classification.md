@@ -10,7 +10,7 @@ Risk classification is where policy meets operations. A governance framework tha
 
 The triage system runs on an internal taxonomy mapped to the external frameworks a regulated company answers to. This document defines those mappings in the open. The point is defensibility: when an examiner asks why a vendor landed in a given tier, the reasoning is written down here rather than reconstructed under pressure.
 
-Without explicit mapping, a system's risk posture defaults to whatever the most aggressive interpreter says it is. Writing the mapping down sets the posture deliberately instead of letting it drift to the loudest reading.
+Without explicit mapping, a system's risk posture defaults to whatever the most aggressive interpreter says it is. Writing the mapping down sets the posture deliberately.
 
 One boundary matters before the rest. This document classifies the triage system itself against regulatory frameworks. It does not classify the vendors being triaged or the AI those vendors ship. Each triaged vendor is a separate classification the deploying organization owns, a point I return to below.
 
@@ -54,7 +54,7 @@ This classification reflects the system in isolation. It does not classify the v
 
 ## NIST AI RMF mapping
 
-The NIST AI RMF organizes AI risk work into four functions. The system touches all four but owns none outright; it operationalizes work that human governance still directs. This section receives lighter treatment than the EU AI Act and OSFI mappings because NIST AI RMF is voluntary; deploying organizations bound by it through contract or audit expectation should expect to do more specific function-by-function mapping than what this reference provides.
+The NIST AI RMF organizes AI risk work into four functions. The system touches all four but owns none outright; it operationalizes work that human governance still directs. This section receives lighter treatment than the EU AI Act and OSFI mappings because NIST AI RMF is voluntary; deploying organizations bound by it through contract or audit expectation will need to do more specific function-by-function mapping than what this reference provides.
 
 **Govern.** The system supports governance by producing durable, examinable records of every triage decision and its reasoning. It does not replace governance accountability; it gives that accountability something concrete to act on.
 
@@ -104,7 +104,7 @@ Tier assignment is a judgment, not a measurement. Two competent practitioners ca
 
 This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in regulatory examination, model validation, or vendor risk point out what I have missed.
 
-The EU AI Act analysis reflects the system in isolation. Each triaged vendor must be separately classified under Annex III by the deploying organization. The OSFI E-23 mapping is a starting point; actual E-23 compliance requires institution-specific implementation that is out of scope here. Risk taxonomies are inherently judgmental, and the four tiers above are calibrated for a generic mid-market regulated company. Real deployment will require recalibration.
+The EU AI Act analysis reflects the system in isolation, and the boundary noted above applies: each triaged vendor must be separately classified by the deploying organization. The OSFI E-23 mapping is a starting point; actual E-23 compliance requires institution-specific implementation that is out of scope here. Risk taxonomies are inherently judgmental, and the four tiers above are calibrated for a generic mid-market regulated company. Real deployment will require recalibration.
 
 This is practitioner methodology, not legal advice. Production deployment requires legal review and regulatory examination preparation alongside any framework like this. Detailed exclusions about what this system does not decide live in 02-out-of-scope.md.
 
