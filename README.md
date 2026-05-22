@@ -12,7 +12,7 @@ It is part of the [sitkastack Framework](https://sitkastack.com) — a public bo
 
 ## Status
 
-**Phase 0: Discovery & Risk Classification.** The current focus is defining the problem precisely — what a "vendor AI risk triage" actually decides, what risks the taxonomy needs to discriminate between, and what is explicitly out of scope for v0.1. No agent code has been written yet. The Phase 0 artifacts live in [docs/](docs/) and are the substrate every later phase will build on.
+**Phase 0: Discovery & Risk Classification.** The current focus is defining the problem precisely — what a "vendor AI risk triage" actually decides, what risks the taxonomy needs to discriminate between, and what is explicitly out of scope for v0.1. No agent code has been written yet. The Phase 0 artifacts live in [docs/phase-0/](docs/phase-0/) and are the substrate every later phase will build on.
 
 ## Roadmap
 
@@ -29,7 +29,7 @@ A new phase ships roughly every 3–4 weeks. Each phase lands as its own set of 
 ## How to follow along
 
 - Watch this repo for new phases as they land
-- Read the docs in [docs/](docs/) — phases are numbered and intended to be read in order
+- Read the Phase 0 docs in [docs/phase-0/](docs/phase-0/) — they're numbered and intended to be read in order
 - Follow [sitkastack.com](https://sitkastack.com) for the broader framework context
 - Open an issue if something is unclear, wrong, or contradicts your real-world experience
 
