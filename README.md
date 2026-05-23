@@ -18,7 +18,7 @@ Phase 0 (Discovery & Risk Classification) is live. Three artifacts in [docs/phas
 
 Phase 1 (Data Contracts & Privacy) is live. The problem definition, out-of-scope document, input data contract, output data contract, privacy and data handling spec, synthetic data specification, and extension guide live in [docs/phase-1/](docs/phase-1/). Runnable example records ship alongside them in [examples/](examples/).
 
-No agent code has been written yet. The current focus is methodology and contract design. Later phases add code, evaluation, and governance artifacts.
+No agent code has been written yet. The current focus is methodology, now the architecture and threat model for the triage gate. Later phases add code, evaluation, and governance artifacts.
 
 ## Roadmap
 
