@@ -56,7 +56,7 @@ The data problem is the same in nearly every regulated AI system: undefined inpu
 
 This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 artifacts ship and as engineers and privacy practitioners point out what I have missed.
 
-The contracts described here reflect a generic triage agent. A real deployment will extend the schema for its own vendor categories, questionnaire formats, and internal control framework. The shape holds; the specific fields will not survive contact with a particular institution unchanged.
+The contracts described here reflect a generic triage agent. A real deployment will extend the schema for its own vendor categories, questionnaire formats, and internal control framework. The patterns for extending without breaking the audit boundary live in EXTENDING.md.
 
 This is practitioner methodology, not legal advice. Detailed privacy considerations live in the privacy and data handling spec, and boundary clarifications live in 01-out-of-scope.md. Production deployment requires legal and privacy review alongside any framework like this, particularly where PIPEDA, GDPR, or sectoral retention rules apply.
 

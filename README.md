@@ -4,32 +4,38 @@ A reference implementation of an AI agent that performs vendor and third-party A
 
 ## What this is
 
-Mid-market companies in regulated industries are now expected to assess the AI risk of every vendor they onboard — model provenance, data handling, prompt injection exposure, log retention, fine-tuning posture, and a growing list of obligations driven by NIST AI RMF, the EU AI Act, sectoral regulators, and internal audit committees. Most teams answer this with a spreadsheet and a vibe check.
+Mid-market companies in regulated industries are now expected to assess the AI risk of every vendor they onboard. The list of obligations keeps growing: model provenance, data handling, prompt injection exposure, log retention, fine-tuning posture, and more, all driven by NIST AI RMF, the EU AI Act, sectoral regulators, and internal audit committees. Most teams answer this with a spreadsheet and a vibe check.
 
 This repository is a working pattern for doing it deliberately: an agent that ingests a vendor's public documentation, security artifacts, and questionnaire responses, classifies the engagement against a defined risk taxonomy, and produces an audit-ready triage record. The code, the prompts, the evaluation harness, and the governance artifacts (model cards, eval reports, audit logs) all ship in this repo.
 
-It is part of the [sitkastack Framework](https://sitkastack.com) — a public body of work on shipping audit-ready AI inside regulated mid-market companies. Everything here is intended to be forked, adapted, and pressure-tested against your own regulatory context.
+It is part of the [sitkastack Framework](https://sitkastack.com), a public body of work on shipping audit-ready AI inside regulated mid-market companies. Everything here is intended to be forked, adapted, and pressure-tested against your own regulatory context.
 
 ## Status
 
-**Phase 0: Discovery & Risk Classification.** The current focus is defining the problem precisely — what a "vendor AI risk triage" actually decides, what risks the taxonomy needs to discriminate between, and what is explicitly out of scope for v0.1. No agent code has been written yet. The Phase 0 artifacts live in [docs/phase-0/](docs/phase-0/) and are the substrate every later phase will build on.
+**Phase 0 complete. Phase 1 in progress.**
+
+Phase 0 (Discovery & Risk Classification) is live. Three artifacts in [docs/phase-0/](docs/phase-0/) define the problem the agent solves, the regulatory frameworks the classification maps to, and the boundaries of what is in and out of scope.
+
+Phase 1 (Data Contracts & Privacy) is in progress. The problem definition, out-of-scope document, input data contract, output data contract, privacy and data handling spec, synthetic data specification, and extension guide live in [docs/phase-1/](docs/phase-1/). Runnable example records ship alongside them in [examples/](examples/).
+
+No agent code has been written yet. The current focus is methodology and contract design. Later phases add code, evaluation, and governance artifacts.
 
 ## Roadmap
 
-- **Phase 0** — Discovery & Risk Classification (current)
-- **Phase 1** — Minimal triage agent, hand-graded eval set
-- **Phase 2** — Audit log schema, decision traceability
-- **Phase 3** — Prompt injection and jailbreak hardening
-- **Phase 4** — Human-in-the-loop review workflow
-- **Phase 5** — Governance artifacts: model card, eval report, DPIA template
-- **Phase 6** — Production hardening notes and known-limit catalog
+- **Phase 0**: Discovery & Risk Classification (live)
+- **Phase 1**: Data Contracts & Privacy (in progress)
+- **Phase 2**: Architecture & Threat Model (upcoming)
+- **Phase 3**: Build & Eval (upcoming)
+- **Phase 4**: Governance Artifacts (upcoming)
+- **Phase 5**: Deploy & Monitor (upcoming)
+- **Phase 6**: Sunset Planning (upcoming)
 
-A new phase ships roughly every 3–4 weeks. Each phase lands as its own set of PRs with the design doc, the code, the tests, and the eval results in the same commit history.
+Phases ship when ready. Each phase lands as its own set of PRs with the design docs, code where applicable, tests, and eval results in the same commit history.
 
 ## How to follow along
 
 - Watch this repo for new phases as they land
-- Read the Phase 0 docs in [docs/phase-0/](docs/phase-0/) — they're numbered and intended to be read in order
+- Read the Phase 0 docs in [docs/phase-0/](docs/phase-0/), which are numbered and intended to be read in order
 - Follow [sitkastack.com](https://sitkastack.com) for the broader framework context
 - Open an issue if something is unclear, wrong, or contradicts your real-world experience
 
@@ -44,10 +50,18 @@ This is intentionally honest:
 
 If you spot something that is wrong or oversimplified, opening an issue is the most useful thing you can do.
 
+## Examples
+
+The examples/ directory contains illustrative JSON files engineers can use to verify their integrations against the Phase 1 contracts:
+
+- examples/input-submission.example.json: a valid input submission, validates against the Input Contract schema
+- examples/triage-record.example.json: a valid triage record paired with the input example, validates against the Output Contract schema
+- examples/validation-error.example.json: illustrative shape of a structured validation error response from the intake validator
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Contact
 
-Built by Robyn Toor — [robyn@sitkastack.com](mailto:robyn@sitkastack.com).
+Built by Robyn Toor. Contact: [robyn@sitkastack.com](mailto:robyn@sitkastack.com).

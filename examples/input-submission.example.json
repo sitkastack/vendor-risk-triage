@@ -1,0 +1,39 @@
+{
+  "vendor_id": "v-northwind-2026-001",
+  "vendor_name": "Northwind Analytics Inc.",
+  "jurisdiction": "CA-ON",
+  "primary_contact": {
+    "name": "Avery Singh",
+    "email": "avery.singh@example.com"
+  },
+  "vendor_classification": "SaaS",
+  "ai_usage_level": "operational_decisions",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "soc2_report",
+      "reference": "internal://docstore/northwind-soc2-type2-2025-q4.pdf",
+      "content_hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "artifact_type": "security_questionnaire",
+      "reference": "internal://docstore/northwind-sig-2026-01.xlsx"
+    }
+  ],
+  "submission_timestamp": "2026-05-22T14:30:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Intelligent ticket routing",
+      "description": "Classifies incoming support tickets and routes them to specialist queues based on content and historical resolution patterns.",
+      "decision_role": "operational",
+      "autonomy": "human_confirmed"
+    }
+  ],
+  "model_providers": ["OpenAI", "internal"],
+  "pii_processing_claims": {
+    "processes_pii": true,
+    "categories": ["contact_data", "support_interaction_data"],
+    "handling_notes": "Customer contact data and support interaction text are processed through the routing classifier; no PII is retained beyond the routing decision; outputs do not include PII."
+  },
+  "ai_act_self_classification": "limited_risk"
+}

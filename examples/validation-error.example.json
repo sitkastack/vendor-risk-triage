@@ -1,0 +1,27 @@
+{
+  "_comment": "Illustrative example of a structured validation error response from the input contract intake validator. The exact error response shape is a convention; the input contract schema specifies the rules that produce these errors.",
+  "submission_received_at": "2026-05-22T14:30:00Z",
+  "validation_outcome": "rejected",
+  "errors": [
+    {
+      "field_path": "$.jurisdiction",
+      "rule": "pattern",
+      "expected_pattern": "^([A-Z]{2}(-[A-Z0-9]{1,3})?|EU|EEA|UK|GLOBAL)$",
+      "actual_value": "Canada",
+      "message": "jurisdiction must be an ISO 3166-1 alpha-2 country code, an ISO 3166-2 region code, or one of EU, EEA, UK, GLOBAL"
+    },
+    {
+      "field_path": "$.ai_usage_level",
+      "rule": "required",
+      "actual_value": null,
+      "message": "ai_usage_level is required"
+    },
+    {
+      "field_path": "$.documentation_artifacts",
+      "rule": "minItems",
+      "expected": 1,
+      "actual": 0,
+      "message": "documentation_artifacts must contain at least one artifact reference"
+    }
+  ]
+}
