@@ -164,7 +164,7 @@ When a reviewer overrides a recommendation, the override is implemented as a new
 
 Revocations follow a different pattern. A revocation marks a record without superseding it (no new triage decision is implied), per the output contract's revoked_at and revocation_reason fields. The reviewer submits a revocation request to the intake transport's revocation endpoint with the decision_id of the record being revoked and the revocation reason. The system writes the marker to the Revocations store; the original record remains visible in the audit trail unchanged. The revoker's identity is captured by the intake's authentication and audit logging, separate from the contract fields.
 
-The architecture commits to these two patterns (override-via-supersession and revocation-via-marker). The specific UI for reviewers to read recommendations and trigger overrides or revocations is institutional configuration (a web app, a Slack notification with action buttons, a GRC platform integration, etc.). The forthcoming Phase 4 (Human-in-the-Loop Review Workflow) of the roadmap specifies the reference implementation's UI; this architecture document specifies the data path.
+The architecture commits to these two patterns (override-via-supersession and revocation-via-marker). The specific UI for reviewers to read recommendations and trigger overrides or revocations is institutional configuration (a web app, a Slack notification with action buttons, a GRC platform integration, etc.). The reference implementation's HITL UI is part of Phase 3 (Build & Eval); this architecture document specifies the data path the UI operates on.
 
 ## External dependencies
 
@@ -196,7 +196,7 @@ The exclusions below are the ones a reader might wrongly expect from this docume
 
 **Disaster recovery and backup architecture.** Database backup strategy, replication topology, and failover procedures are deployment configuration owned by the institution's infrastructure team.
 
-**Confidence-gated routing and human-in-the-loop UI workflows.** Confidence calibration is deferred to Phase 3 per Phase 1's explicit deferral. The HITL UI is deferred to Phase 4. The output contract supports the data needed for both; the specific routing logic and review UI are forthcoming.
+**Confidence-gated routing and human-in-the-loop UI workflows.** Confidence calibration is deferred to Phase 3 per Phase 1's explicit deferral. The HITL UI is part of Phase 3 (Build & Eval). The output contract supports the data needed for both; the specific routing logic and review UI are forthcoming.
 
 **Document attachment parsing.** PDF, DOCX, and similar document attachments are referenced through the documentation_artifacts field of the input contract, not parsed by the agent. They exist for the human reviewer; the agent classifies from structured fields, not from unstructured document contents. This is a deliberate architectural commitment that keeps the agent's input surface defined and reviewable. The reference implementation does not include OCR, document text extraction, or attachment-content reasoning.
 
