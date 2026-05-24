@@ -110,7 +110,7 @@ Validates the triage record produced by the classifier against the output contra
 
 **Triage Records store**
 
-Append-only Postgres table holding immutable triage records. Per ADR-005, the application role has INSERT only; UPDATE and DELETE are not granted. Supersession is implemented through new records linked to prior decision_ids; revocation is implemented through the separate Revocations table.
+Append-only Postgres table holding immutable triage records. Per ADR-005, the application role has INSERT only; UPDATE and DELETE are not granted. Per ADR-006, records remain validated against the schema version they were written under; the store holds multiple schema versions simultaneously, with readers dispatching on the record's output_schema_version field. Supersession is implemented through new records linked to prior decision_ids; revocation is implemented through the separate Revocations table.
 
 **Failed Submissions store**
 
