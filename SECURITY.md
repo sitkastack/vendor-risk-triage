@@ -1,6 +1,6 @@
 # Security Policy
 
-This repository hosts reference implementation code that may include patterns related to AI security — prompt injection mitigation, audit logging, secrets handling, and similar. We take security reports seriously, including reports about documentation that could mislead an implementer into building something unsafe.
+This repository hosts reference implementation code that may include patterns related to AI security (prompt injection mitigation, audit logging, secrets handling, and similar). We take security reports seriously, including reports about documentation that could mislead an implementer into building something unsafe.
 
 ## Reporting a vulnerability
 

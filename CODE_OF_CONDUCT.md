@@ -10,7 +10,7 @@ Be direct, be kind, assume good faith, and focus on what is best for the communi
 
 ## Scope
 
-This Code of Conduct applies within all project spaces — issues, pull requests, discussions, and any other forum where someone is representing the project or its community — and when an individual is officially representing the project in public spaces.
+This Code of Conduct applies within all project spaces (issues, pull requests, discussions, and any other forum where someone is representing the project or its community) and when an individual is officially representing the project in public spaces.
 
 ## Reporting
 
