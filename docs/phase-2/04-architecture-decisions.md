@@ -463,7 +463,7 @@ If your decision supersedes one of the ADRs in this document, mark the original 
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, in progress as of May 24, 2026. This architecture decisions document publishes alongside the Phase 2 problem definition. The system architecture, trust boundaries, and threat model documents are in active drafting.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
 
 ## Author
 

@@ -12,19 +12,21 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 
 ## Status
 
-**Phase 0 and Phase 1 complete. Phase 2 in progress.**
+**Phase 0, Phase 1, and Phase 2 complete. Phase 3 upcoming.**
 
 Phase 0 (Discovery & Risk Classification) is live. Three artifacts in [docs/phase-0/](docs/phase-0/) define the problem the agent solves, the regulatory frameworks the classification maps to, and the boundaries of what is in and out of scope.
 
 Phase 1 (Data Contracts & Privacy) is live. The problem definition, out-of-scope document, input data contract, output data contract, privacy and data handling spec, synthetic data specification, and extension guide live in [docs/phase-1/](docs/phase-1/). Runnable example records ship alongside them in [examples/](examples/).
 
-No agent code has been written yet. The current focus is methodology, now the architecture and threat model for the triage gate. Later phases add code, evaluation, and governance artifacts.
+Phase 2 (Architecture & Threat Model) is live. Five artifacts in [docs/phase-2/](docs/phase-2/) cover the problem definition, the system architecture, the trust boundaries, the threat model, and the architecture decision records for the triage gate.
+
+No agent code has been written yet. With the architecture and threat model now documented, the next focus is Phase 3 (Build & Eval): the agent implementation and its evaluation harness. Later phases add governance artifacts, deployment, and sunset planning.
 
 ## Roadmap
 
 - **Phase 0**: Discovery & Risk Classification (live)
 - **Phase 1**: Data Contracts & Privacy (live)
-- **Phase 2**: Architecture & Threat Model (in progress)
+- **Phase 2**: Architecture & Threat Model (live)
 - **Phase 3**: Build & Eval (upcoming)
 - **Phase 4**: Governance Artifacts (upcoming)
 - **Phase 5**: Deploy & Monitor (upcoming)

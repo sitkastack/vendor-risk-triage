@@ -105,7 +105,7 @@ Phase 2 is complete when:
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, in progress as of May 23, 2026. This problem definition publishes ahead of the other four Phase 2 artifacts. The system architecture, trust boundaries, threat model, and architecture decisions documents are in active drafting. Roadmap: sitkastack.com/roadmap.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published. Roadmap: sitkastack.com/roadmap.
 
 ## Author
 

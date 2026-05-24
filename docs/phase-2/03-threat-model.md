@@ -395,7 +395,7 @@ This threat model is built on by:
 
 ## Status
 
-Phase 2 (Architecture and Threat Model) of the sitkastack Framework, in progress as of May 24, 2026. This threat model document completes Phase 2 alongside the problem definition, system architecture, trust boundaries, and architecture decisions documents.
+Phase 2 (Architecture and Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
 
 ## Author
 
