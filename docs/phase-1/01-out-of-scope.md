@@ -80,10 +80,10 @@ New data sources, new regulatory requirements, and lessons from operating the co
 
 ## Limitations of this document
 
-This list reflects the v0.1 reference implementation. Real deployments will carry context-specific exclusions, shaped by sector, regulators, and internal structure, that this document cannot anticipate.
+This list reflects the v0.3 reference implementation. Real deployments will carry context-specific exclusions, shaped by sector, regulators, and internal structure, that this document cannot anticipate.
 
 The most useful feedback comes from engineers and privacy practitioners who have run contracts like these in production and seen failure modes I have not. If an exclusion belongs here and isn't, open a GitHub issue.
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

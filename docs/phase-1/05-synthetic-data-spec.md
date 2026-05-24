@@ -50,7 +50,7 @@ The pipeline is itself auditable, documented well enough that someone can see ho
 
 ### A reference pipeline
 
-The spec stays neutral on which generation approach to use, but a workable v0.1 pipeline looks much the same across institutions. Naming its stages helps an engineer or a PM scope the work before committing to any tool. The institution's choice is the technology inside each stage, not the stages themselves.
+The spec stays neutral on which generation approach to use, but a workable reference pipeline looks much the same across institutions. Naming its stages helps an engineer or a PM scope the work before committing to any tool. The institution's choice is the technology inside each stage, not the stages themselves.
 
 1. **Scenario design.** The institution decides which vendor patterns the corpus must cover: which classifications, which AI usage levels, which jurisdictions, which risk tiers, and which edge cases. The coverage requirements named earlier in this spec drive this stage. The output is a scenario inventory the rest of the pipeline generates against.
 
@@ -58,11 +58,11 @@ The spec stays neutral on which generation approach to use, but a workable v0.1 
 
 3. **Validation.** Every candidate record passes through the input contract's schema validator before it enters the corpus. Records that fail are either corrected and re-validated, or routed to the explicitly invalid portion of the corpus when the intent was to generate a malformed test case. A candidate that fails for the wrong reason is thrown out.
 
-4. **Realism review.** Records that validate are reviewed for plausibility against what a real vendor would actually submit. In v0.1 the reviewer is a human, often the engineer who built the pipeline. Records that read as obviously synthetic, repeat boilerplate, or violate the anti-patterns named earlier in this spec go back for regeneration.
+4. **Realism review.** Records that validate are reviewed for plausibility against what a real vendor would actually submit. In this reference pipeline the reviewer is a human, often the engineer who built the pipeline. Records that read as obviously synthetic, repeat boilerplate, or violate the anti-patterns named earlier in this spec go back for regeneration.
 
 5. **Metadata and storage.** Approved records carry metadata identifying them as synthetic, naming the pipeline version that produced them, and recording when the scenario they cover entered the inventory. The corpus is stored alongside the schemas it validates against and versioned in the same repository, so any past corpus is reconstructable.
 
-The pipeline as described is v0.1 and assumes manual realism review; later phases automate parts of it. The choices inside each stage, which model, which templates, which reviewer, are the institution's. What this spec requires is that the stages exist, that each is documented, and that the corpus carries metadata showing how each record came to exist.
+The pipeline as described assumes manual realism review; later phases automate parts of it. The choices inside each stage, which model, which templates, which reviewer, are the institution's. What this spec requires is that the stages exist, that each is documented, and that the corpus carries metadata showing how each record came to exist.
 
 ## Validation against the contracts
 
@@ -78,7 +78,7 @@ Old synthetic data is preserved rather than discarded, so a decision made agains
 
 ## Limitations of this spec
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the dataset itself ships and as engineers point out gaps in the coverage it asks for.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the dataset itself ships and as engineers point out gaps in the coverage it asks for.
 
 This document specifies the requirements for the synthetic dataset; it is not the dataset. The corpus is a separate Phase 1 deliverable that ships with subsequent commits, and meeting these requirements in practice is harder than stating them here.
 
@@ -86,4 +86,4 @@ This is practitioner methodology, not a turnkey corpus. A deploying organization
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

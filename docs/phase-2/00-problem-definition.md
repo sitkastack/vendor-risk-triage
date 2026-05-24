@@ -78,7 +78,8 @@ Phase 2 is complete when:
 - Each artifact has been cross-referenced against the Phase 0 risk classification, the Phase 0 out-of-scope boundaries, and the Phase 1 data contracts. Any contradictions identified have been resolved either by editing the contradicting document or by adding an explicit reconciliation note in the affected artifact.
 - The architecture diagram in 01-system-architecture.md is rendered as Mermaid, not described in prose.
 - The threat model in 03-threat-model.md acknowledges residual risk for at least three identified threats.
-- Each artifact maps at least one specific control objective from NIST AI RMF, EU AI Act, OSFI E-23, and SOX ICFR. SOC 2 and ISO 42001 are included where the reference implementation context applies them.
+- Each artifact maps at least one specific control objective from NIST AI RMF, EU AI Act, OSFI E-23, SOX/ICFR, and ISO/IEC 42001:2023. SOC 2 is included where the reference implementation context applies it. Sectoral frameworks (NAIC Model Bulletin on AI, SR 11-7, FCA, FINRA) are acknowledged in Phase 0 risk classification.
+- ISO/IEC 42001 Annex A controls map to phases as documented in docs/governance/README.md. Phase 2 artifacts specifically map to A.6 (AI system life cycle) and A.10 (Third-party and customer relationships).
 
 ## How Phase 2 connects to other phases
 

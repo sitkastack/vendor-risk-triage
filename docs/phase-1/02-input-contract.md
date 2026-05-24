@@ -348,7 +348,7 @@ Where a submission includes the optional content_hash on its artifacts, the reco
 
 ## Limitations of this contract
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 specifications ship and as engineers point out what I have missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 specifications ship and as engineers point out what I have missed.
 
 The field set is generic. It is built for a mid-market regulated company triaging conventional SaaS, infrastructure, and model-provider vendors, and it will not cover every category a real deployment meets. Embedded-AI hardware, vendor-of-vendor exposure, and category-specific disclosures will need fields this schema does not carry. A real deployment extends the schema; the reference is a structure to build on, not a finished intake format to adopt. The patterns for extending it without breaking the audit boundary are described in EXTENDING.md.
 
@@ -356,4 +356,4 @@ This is practitioner methodology, not legal advice. The contract specifies the s
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

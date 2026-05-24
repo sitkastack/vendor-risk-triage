@@ -84,10 +84,10 @@ The list also contracts as the system grows. When a later phase adds a capabilit
 
 ## Limitations of this document
 
-This list reflects the v0.1 reference implementation. Real deployments will carry their own context-specific exclusions, shaped by sector, regulators, and internal structure that this document cannot anticipate.
+This list reflects the v0.3 reference implementation. Real deployments will carry their own context-specific exclusions, shaped by sector, regulators, and internal structure that this document cannot anticipate.
 
 The most useful feedback comes from practitioners who have seen the failure modes I haven't. If an exclusion belongs here and isn't, open a GitHub issue.
 
 ## Status
 
-Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, in progress as of May 20, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

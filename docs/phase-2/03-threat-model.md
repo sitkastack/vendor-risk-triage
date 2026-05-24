@@ -361,6 +361,19 @@ The following threats have partial mitigation in the reference architecture. Ins
 
 **Bias and fairness (T-AI6 and T-AI7).** Cannot be fully eliminated with current LLM technology. The reference architecture supports detection and correction through bias evaluation suites and distribution monitoring, but cannot prevent bias from arising in model outputs. Residual risk: vendor classification reflects biases that affect specific vendor categories. Institutional mitigation: documented bias evaluation procedures, reviewer training on bias patterns, vendor escalation paths when bias is identified, board-level oversight of vendor classification fairness over time.
 
+## Risk management formality and forward references
+
+This threat model articulates threats and detection approaches in prose with mitigations per threat. Practitioners trained in formal risk management disciplines (CRISC, AAIR) will note that the model does not yet ship:
+
+- A tabular threat-to-control matrix at the per-control level
+- A formal risk register integrating these threats with the institution's broader risk inventory
+- Named key risk indicators (KRIs) for ongoing monitoring
+- Per-threat risk owners and risk acceptance documentation
+
+These artifacts are scoped to Phase 4 (Governance Artifacts), where they integrate with the institution's broader governance discipline and the ISO/IEC 42001 Annex A controls documented in docs/governance/README.md. The threat model in Phase 2 provides the substantive analysis that Phase 4 formalizes; the formality follows the substance rather than preceding it.
+
+The detection skeletons in detection/ provide the executable interface that Phase 5 implements against. Risk register integration, KRI definition, and risk owner assignment are governance concerns Phase 4 addresses; the threat-and-detection substance lives here.
+
 ## What this threat model does not cover
 
 The exclusions below are the ones a reader might wrongly expect from this document.

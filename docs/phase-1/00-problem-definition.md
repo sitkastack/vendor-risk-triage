@@ -54,7 +54,7 @@ The data problem is the same in nearly every regulated AI system: undefined inpu
 
 ## Limitations of this document
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 artifacts ship and as engineers and privacy practitioners point out what I have missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 artifacts ship and as engineers and privacy practitioners point out what I have missed.
 
 The contracts described here reflect a generic triage agent. A real deployment will extend the schema for its own vendor categories, questionnaire formats, and internal control framework. The patterns for extending without breaking the audit boundary live in EXTENDING.md.
 
@@ -62,4 +62,4 @@ This is practitioner methodology, not legal advice. Detailed privacy considerati
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

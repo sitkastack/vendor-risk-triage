@@ -4,7 +4,7 @@ A reference implementation of an AI agent that performs vendor and third-party A
 
 ## What this is
 
-Mid-market companies in regulated industries are now expected to assess the AI risk of every vendor they onboard. The list of obligations keeps growing: model provenance, data handling, prompt injection exposure, log retention, fine-tuning posture, and more, all driven by NIST AI RMF, the EU AI Act, sectoral regulators, and internal audit committees. Most teams answer this with a spreadsheet and a vibe check.
+Mid-market companies in regulated industries are now expected to assess the AI risk of every vendor they onboard. The list of obligations keeps growing: model provenance, data handling, prompt injection exposure, log retention, fine-tuning posture, and more, all driven by frameworks like NIST AI RMF, the EU AI Act, OSFI Guideline E-23, SOX/ICFR, and ISO/IEC 42001, plus sectoral regulators and internal audit committees. Most teams answer this with a spreadsheet and a vibe check.
 
 This repository is a working pattern for doing it deliberately: an agent that ingests a vendor's public documentation, security artifacts, and questionnaire responses, classifies the engagement against a defined risk taxonomy, and produces an audit-ready triage record. The framework ships in phases: Phase 0 through Phase 2 (documentation phases) are live; Phase 3 (Build and Eval) adds the agent code, prompts, and evaluation harness; Phase 4 adds governance artifacts (model cards, eval reports, audit log schemas); Phase 5 adds deployment and monitoring; Phase 6 adds sunset planning. The governance-as-code foundation (machine-readable schemas, validation utility, detection skeletons, CI enforcement) ships ahead of Phase 3 so consumers can validate against the contracts today.
 
@@ -56,7 +56,7 @@ Phases ship when ready. Each phase lands as its own set of PRs with the design d
 
 This is intentionally honest:
 
-- **v0.2 reference, not production-grade audit defense.** The framework documents the discipline; Phase 3 ships the agent code and evaluation suites that turn discipline into running software. Do not point this at a real vendor onboarding flow and assume the output will hold up under regulatory scrutiny. It is a starting point.
+- **v0.3 reference, not production-grade audit defense.** The framework documents the discipline; Phase 3 ships the agent code and evaluation suites that turn discipline into running software. Do not point this at a real vendor onboarding flow and assume the output will hold up under regulatory scrutiny. It is a starting point.
 - **Artifacts are adaptable templates, not finished compliance deliverables.** The model card, audit log schema, and risk taxonomy are designed to be modified for your specific regulatory context (sector, jurisdiction, internal control framework). They will not survive a serious audit unchanged.
 - **Solo work, no external peer review at this stage.** Everything here reflects one author's judgment. Issues and PRs from practitioners with real audit and procurement experience are explicitly welcome.
 - **The five-question audit-ready framework referenced in the docs is a starter, not a comprehensive audit methodology.** It is a useful filter for early-stage triage, not a substitute for a real assurance program.

@@ -252,7 +252,7 @@ Decision lineage is queryable from the records themselves. The supersedes links 
 
 ## Limitations of this contract
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 specifications ship and as engineers point out what I have missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the remaining Phase 1 specifications ship and as engineers point out what I have missed.
 
 The field set is generic. It records a tier, a disposition, and the reasoning behind them for a mid-market regulated company, and it will not capture every field a particular institution's governance or board reporting requires. Decision approvers, internal control identifiers, and links into a GRC workflow are the kind of fields a real deployment adds. A real deployment extends the contract; the reference is a structure to extend, not a finished record format to adopt. Extension patterns are described in EXTENDING.md.
 
@@ -262,4 +262,4 @@ This is practitioner methodology, not legal advice. The contract specifies the s
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

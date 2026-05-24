@@ -96,7 +96,7 @@ The spec is a public artifact, so a deploying organization demonstrates complian
 
 ## Limitations of this spec
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the rest of Phase 1 settles and as privacy practitioners who have run data handling like this in production point out what I have missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as the rest of Phase 1 settles and as privacy practitioners who have run data handling like this in production point out what I have missed.
 
 This is methodology, not jurisdiction-specific compliance. It is built to be compatible with PIPEDA, GDPR, and common sectoral regimes, but compatibility is not the same as compliance with any one of them as applied to a particular institution. A real deployment requires legal and privacy review against the specific obligations that attach to it, and new privacy regulation requires the spec to be revisited rather than assumed still current.
 
@@ -104,4 +104,4 @@ This is practitioner methodology, not legal advice. The spec is the starting poi
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

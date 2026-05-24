@@ -40,7 +40,7 @@ I'm publishing this as the first reference implementation in the sitkastack Fram
 
 ## Limitations of this document
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in vendor risk, model validation, or regulatory examination point out what I have missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in vendor risk, model validation, or regulatory examination point out what I have missed.
 
 Your regulatory context, sector, and internal controls will require adaptation. Treat it as a starting point you adjust, not a finished product you adopt unchanged. Production deployment requires institution-specific validation, including independent review where OSFI E-23, SR 11-7, or equivalent governance frameworks apply.
 
@@ -48,4 +48,4 @@ Detailed exclusions, including what the system does not decide and who owns each
 
 ## Status
 
-Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, in progress as of May 20, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

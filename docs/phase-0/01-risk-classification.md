@@ -16,13 +16,15 @@ One boundary matters before the rest. This document classifies the triage system
 
 ## Regulatory frameworks this system maps to
 
-The system maps its classification logic to four bodies of regulation, ordered here by how directly they bear on a mid-market regulated company deploying it.
+The system maps its classification logic to five bodies of regulation, ordered here by how directly they bear on a mid-market regulated company deploying it.
 
 **EU AI Act.** Mandatory for AI systems placed on the market or put into service in the EU, or whose outputs affect people in the EU, with obligations scaled across risk tiers and the heaviest weight on the Annex III high-risk categories.
 
 **OSFI Guideline E-23.** Effective May 1, 2027, it extends Canada's model risk management to AI and ML systems and pulls third-party model risk under Guideline B-10 for all federally regulated financial institutions.
 
 **NIST AI RMF.** A voluntary US structure whose four functions increasingly appear in vendor contracts and audit expectations even where no statute requires them.
+
+**ISO/IEC 42001:2023.** International AI management system standard, providing the management discipline AI risk programs operate under. Increasingly required in vendor contracts and adopted as the structural framework for AAIA, AAIR, and AAISM certified practices.
 
 **Sectoral frameworks.** The NAIC Model Bulletin on AI for insurers, SR 11-7 for US banks, and FCA and FINRA expectations where capital-markets activity is in play.
 
@@ -80,6 +82,16 @@ OSFI Guideline E-23 takes effect May 1, 2027 and applies to every federally regu
 
 The system is one component of E-23 compliance, not a complete solution. Full E-23 readiness requires governance artifacts out of scope here: an enterprise model risk management policy, model approval workflows, and independent validation procedures among them.
 
+## ISO/IEC 42001 mapping
+
+ISO/IEC 42001 Annex A organizes AI management system controls into ten categories. The Phase 0 work primarily exercises two of them.
+
+**A.5 Assessing impacts of AI systems.** The risk classification taxonomy and EU AI Act Annex III analysis above operationalize the impact assessment ISO 42001 expects upstream of deployment. The four-tier internal taxonomy is how an institution discharges that assessment for the AI subset of its vendor population.
+
+**A.10 Third-party and customer relationships.** The entire premise of the triage system is the third-party AI relationship that A.10 governs. The risk taxonomy is how the institution discharges that obligation for its third-party AI vendors specifically.
+
+Per-artifact control mappings at finer granularity ship as Phase 4 governance deliverables alongside model cards and audit log schemas. The full Annex A mapping by phase is documented in docs/governance/README.md.
+
 ## NAIC Model Bulletin and SR 11-7
 
 **NAIC Model Bulletin.** The Model Bulletin on the Use of Artificial Intelligence Systems by Insurers, adopted by the NAIC in late 2023 and since enacted as binding regulation in roughly 25 states, sets regulatory expectations for insurers using AI, including AI obtained from third parties. The system contributes to insurer compliance by documenting third-party AI risk assessments in a consistent, examinable format.
@@ -102,7 +114,7 @@ Tier assignment is a judgment, not a measurement. Two competent practitioners ca
 
 ## Limitations of this document
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in regulatory examination, model validation, or vendor risk point out what I have missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage. It will change as the implementation phases ship and as practitioners with deeper experience in regulatory examination, model validation, or vendor risk point out what I have missed.
 
 The EU AI Act analysis reflects the system in isolation, and the boundary noted above applies: each triaged vendor must be separately classified by the deploying organization. The OSFI E-23 mapping is a starting point; actual E-23 compliance requires institution-specific implementation that is out of scope here. Risk taxonomies are inherently judgmental, and the four tiers above are calibrated for a generic mid-market regulated company. Real deployment will require recalibration.
 
@@ -110,4 +122,4 @@ This is practitioner methodology, not legal advice. Production deployment requir
 
 ## Status
 
-Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 0 (Discovery & Risk Classification) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.

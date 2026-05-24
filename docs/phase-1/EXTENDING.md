@@ -64,7 +64,7 @@ Extensions inherit the immutability requirement from the output contract. A reco
 
 The extended schema's version travels with every record it produces, alongside the reference version it builds on. An audit answer cites both, so a reviewer can reconstruct a decision against the exact pair of schemas that shaped it.
 
-Nested objects in the reference schemas, including primary_contact, documentation_artifacts items, evidence_cited items, and others, keep additionalProperties set to false, so they cannot be extended through the same allOf and unevaluatedProperties pattern that works at the top level. Extending a nested object requires forking the nested schema in the extension and overriding the parent's property reference, which is more invasive than top-level extension and is not the recommended path for v0.1. Institutions that encounter the need typically benefit from adding a sibling field at the top level instead, where the extension pattern is supported directly.
+Nested objects in the reference schemas, including primary_contact, documentation_artifacts items, evidence_cited items, and others, keep additionalProperties set to false, so they cannot be extended through the same allOf and unevaluatedProperties pattern that works at the top level. Extending a nested object requires forking the nested schema in the extension and overriding the parent's property reference, which is more invasive than top-level extension and is not the recommended path at this reference version. Institutions that encounter the need typically benefit from adding a sibling field at the top level instead, where the extension pattern is supported directly.
 
 ## Extending the Privacy & Data Handling spec
 
@@ -84,7 +84,7 @@ Extension schemas follow the same semver discipline as the reference. Major vers
 
 ## Limitations of this guide
 
-This is a v0.1 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as institutions extend these contracts and report what the patterns missed.
+This is a v0.3 reference, not production-grade audit defense. It reflects my own work without external peer review at this stage, and it will change as institutions extend these contracts and report what the patterns missed.
 
 This guide describes patterns, not a complete extension framework. A real extension needs its own design and review: the patterns here keep an extension from breaking the audit boundary, but they do not design the institution's schema for it.
 
@@ -92,4 +92,4 @@ This is practitioner methodology, not legal advice. Any production extension car
 
 ## Status
 
-Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, in progress as of May 21, 2026. Roadmap: sitkastack.com/roadmap.
+Phase 1 (Data Contracts & Privacy) of the sitkastack Framework, complete as of May 23, 2026. Roadmap: sitkastack.com/roadmap.
