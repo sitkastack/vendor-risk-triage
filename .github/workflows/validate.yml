@@ -1,0 +1,51 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify schemas are valid JSON Schema 2020-12
+        run: |
+          python -c "
+          import json
+          from jsonschema import Draft202012Validator
+          schemas = [
+              'schemas/input-contract-1.0.0.schema.json',
+              'schemas/output-contract-1.0.0.schema.json',
+          ]
+          for schema_file in schemas:
+              with open(schema_file) as f:
+                  schema = json.load(f)
+              Draft202012Validator.check_schema(schema)
+              print(f'OK: {schema_file} is valid JSON Schema 2020-12')
+          "
+
+      - name: Run pytest
+        run: pytest -v
+
+      - name: Check for em dashes in markdown
+        run: |
+          if grep -rn "—" docs/ README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md 2>/dev/null; then
+            echo "::error::Em dashes found in markdown. Use parentheses or commas instead."
+            exit 1
+          else
+            echo "OK: No em dashes found in markdown"
+          fi

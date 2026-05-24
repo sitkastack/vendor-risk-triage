@@ -1,0 +1,21 @@
+[project]
+name = "vendor-risk-triage"
+version = "0.2.0"
+description = "Reference implementation of an AI agent for vendor risk triage. Part of the sitkastack Framework."
+requires-python = ">=3.11"
+authors = [{name = "Robyn Toor", email = "robyn@sitkastack.com"}]
+license = {text = "Apache-2.0"}
+readme = "README.md"
+
+dependencies = [
+    "jsonschema>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
