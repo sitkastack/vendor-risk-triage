@@ -30,7 +30,7 @@ flowchart TB
     %% Internal gate components
     subgraph Gate[Vendor Risk Triage Gate]
         direction TB
-        Transport[HTTP REST Intake]
+        Transport[HTTP REST Intake<br/>triage + revocation endpoints]
         Normalize[Normalization<br/>optional, deterministic]
         PIIDetect[PII Detection<br/>mechanism institutional]
         InputVal[Input Validator<br/>jsonschema 2020-12]
@@ -64,6 +64,9 @@ flowchart TB
     OutputVal -->|valid| Records
     OutputVal -->|invalid, retry| Classifier
     
+    %% Revocation flow
+    Transport -->|revocation request| Revocations
+    
     %% Audit and retention paths
     Auditor -->|query| AuditAPI
     AuditAPI -->|read-only| Records
@@ -77,7 +80,7 @@ flowchart TB
 
 **HTTP REST Intake**
 
-The transport boundary. Accepts submissions as HTTP POST requests with JSON bodies. Returns either a validation error response (4xx with structured error details) or the completed triage record (2xx). Authentication and authorization are infrastructure concerns owned by the institution's API gateway or service mesh, not by the gate's application code.
+The transport boundary. Accepts both triage submissions and revocation requests as HTTP POST requests with JSON bodies. Triage submissions arrive at the triage endpoint (validated against the input contract per docs/phase-1/02-input-contract.md) and produce triage records. Revocation requests arrive at the revocation endpoint with a decision_id and revocation reason, and produce entries in the Revocations store. Both paths share authentication, audit logging, and the trust boundary controls described in docs/phase-2/02-trust-boundaries.md. Returns either a validation error response (4xx with structured error details) or the completed operation result (2xx). Authentication and authorization are infrastructure concerns owned by the institution's API gateway or service mesh, not by the gate's application code.
 
 **Normalization**
 
@@ -107,7 +110,7 @@ Validates the triage record produced by the classifier against the output contra
 
 **Triage Records store**
 
-Append-only Postgres table holding immutable triage records. Per ADR-005, the application role has INSERT only; UPDATE and DELETE are not granted. Supersession is implemented through new records linked to prior decision_ids; revocation is implemented through the separate Revocations table. Each record carries the output_schema_version it was written under; per ADR-006, records are not retroactively migrated when the schema evolves, so reads are schema-version-aware and the store may hold multiple schema versions at once.
+Append-only Postgres table holding immutable triage records. Per ADR-005, the application role has INSERT only; UPDATE and DELETE are not granted. Supersession is implemented through new records linked to prior decision_ids; revocation is implemented through the separate Revocations table.
 
 **Failed Submissions store**
 
@@ -127,9 +130,9 @@ Scheduled job that deletes records past the configured retention period. A dedic
 
 ## Data flow
 
-A typical submission moves through the gate in the following sequence.
+A typical triage submission moves through the gate in the following sequence.
 
-The submitter sends an HTTP POST to the gate's intake endpoint with a JSON body. The transport layer accepts the request and routes the body through normalization. If the submission is already contract-shaped, normalization passes it through unchanged. If not, the normalization step transforms it deterministically.
+The submitter sends an HTTP POST to the gate's triage endpoint with a JSON body. The transport layer accepts the request and routes the body through normalization. If the submission is already contract-shaped, normalization passes it through unchanged. If not, the normalization step transforms it deterministically.
 
 PII detection inspects the normalized submission. Submissions containing personal information the contract did not request are either redacted (with the redaction recorded) or rejected and stored in the Failed Submissions store with the rejection reason. Clean submissions continue.
 
@@ -138,6 +141,8 @@ The Input Validator checks the submission against the input contract using the s
 The Classification Logic constructs an inference request from the validated submission and invokes the LLM Provider Adapter. The adapter calls the configured LLM provider (Claude by default), receives the response, and returns a structured result to the classifier. The classifier assembles a triage record per the output contract.
 
 The Output Validator checks the assembled record against the output contract. Records that fail validation are not written to storage; the classifier is invoked again to produce a conforming record. Valid records are written to the Triage Records store via the application role's INSERT permission.
+
+Revocation requests follow a shorter path. The transport layer accepts the request at the revocation endpoint, validates the decision_id and revocation reason, and writes the marker to the Revocations store. No classification or inference work is involved.
 
 Auditors and program owners query records, failed submissions, and revocations through the read-only Audit Query API. The retention enforcement job runs on schedule and deletes records past the configured retention period using the retention-enforcement role's narrowly scoped DELETE permission.
 
@@ -155,11 +160,11 @@ The gate produces recommendations; humans decide. The architecture supports the 
 
 After classification, every record lands in the Triage Records store with its recommended risk tier and recommended disposition. The program owner (the VP or Director of Compliance, per Phase 0) and the compliance reviewer (the primary user, per Phase 0) read records through the Audit Query API. The same API serves examiner queries and internal review queries; the access boundary is institutional configuration on top of the read-only API.
 
-When a reviewer overrides a recommendation, the override is implemented as a new triage submission. The reviewer (or an integration acting on their behalf) submits a new submission through the intake transport with the prior record's decision_id as the prior_triage_record_id field. The system processes it as a new triage decision, produces a new record, and writes that record with the supersedes field pointing to the prior decision. The supersession chain reflects the current decision state without modifying any prior record.
+When a reviewer overrides a recommendation, the override is implemented as a new triage submission. The reviewer (or an integration acting on their behalf) submits a new submission through the intake transport's triage endpoint with the prior record's decision_id as the prior_triage_record_id field. The system processes it as a new triage decision, produces a new record, and writes that record with the supersedes field pointing to the prior decision. The supersession chain reflects the current decision state without modifying any prior record.
 
-Revocations follow a different pattern. A revocation marks a record without superseding it (no new triage decision is implied), per the output contract's revoked_at and revocation_reason fields. The Revocations store holds the marker; the original record remains visible in the audit trail unchanged.
+Revocations follow a different pattern. A revocation marks a record without superseding it (no new triage decision is implied), per the output contract's revoked_at and revocation_reason fields. The reviewer submits a revocation request to the intake transport's revocation endpoint with the decision_id of the record being revoked and the revocation reason. The system writes the marker to the Revocations store; the original record remains visible in the audit trail unchanged. The revoker's identity is captured by the intake's authentication and audit logging, separate from the contract fields.
 
-The architecture commits to these two patterns (override-via-supersession and revocation-via-marker). The specific UI for reviewers to read recommendations and trigger overrides is institutional configuration (a web app, a Slack notification with action buttons, a GRC platform integration, etc.). The forthcoming Phase 4 (Human-in-the-Loop Review Workflow) of the roadmap specifies the reference implementation's UI; this architecture document specifies the data path.
+The architecture commits to these two patterns (override-via-supersession and revocation-via-marker). The specific UI for reviewers to read recommendations and trigger overrides or revocations is institutional configuration (a web app, a Slack notification with action buttons, a GRC platform integration, etc.). The forthcoming Phase 4 (Human-in-the-Loop Review Workflow) of the roadmap specifies the reference implementation's UI; this architecture document specifies the data path.
 
 ## External dependencies
 
@@ -181,7 +186,7 @@ Detailed trust boundary analysis, including the third-party AI components that s
 
 The exclusions below are the ones a reader might wrongly expect from this document. Items that naturally live in later phases or in deployment configuration are skipped here.
 
-**Specific API endpoint URLs and request/response formats.** The HTTP REST intake is described as a transport pattern, not specified at the OpenAPI level. Endpoint design lives in Phase 3 (Build & Eval) deliverables.
+**Specific API endpoint URLs and request/response formats.** The HTTP REST intake is described as a transport pattern, not specified at the OpenAPI level. Endpoint design, including the specific revocation request schema, lives in Phase 3 (Build & Eval) deliverables.
 
 **Authentication and authorization specifics.** The architecture identifies where auth happens (at the intake transport for submitters, at the audit API for examiners and program owners) but does not specify auth mechanism (API keys, OAuth, SAML, etc.). Auth is institutional configuration.
 
