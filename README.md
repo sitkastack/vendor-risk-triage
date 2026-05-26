@@ -6,49 +6,118 @@ A reference implementation of an AI agent that performs vendor and third-party A
 
 Mid-market companies in regulated industries are now expected to assess the AI risk of every vendor they onboard. The list of obligations keeps growing: model provenance, data handling, prompt injection exposure, log retention, fine-tuning posture, and more, all driven by frameworks like NIST AI RMF, the EU AI Act, OSFI Guideline E-23, SOX/ICFR, and ISO/IEC 42001, plus sectoral regulators and internal audit committees. Most teams answer this with a spreadsheet and a vibe check.
 
-This repository is a working pattern for doing it deliberately: an agent that ingests a vendor's public documentation, security artifacts, and questionnaire responses, classifies the engagement against a defined risk taxonomy, and produces an audit-ready triage record. The framework ships in phases: Phase 0 through Phase 2 (documentation phases) are live; Phase 3 (Build and Eval) adds the agent code, prompts, and evaluation harness; Phase 4 adds governance artifacts (model cards, eval reports, audit log schemas); Phase 5 adds deployment and monitoring; Phase 6 adds sunset planning. The governance-as-code foundation (machine-readable schemas, validation utility, detection skeletons, CI enforcement) ships ahead of Phase 3 so consumers can validate against the contracts today.
+This repository is a working pattern for doing it deliberately. An agent ingests a vendor's documentation, retrieves relevant regulation context, classifies the engagement against a defined risk taxonomy, and produces an audit-ready triage record. A full evaluation harness measures the agent's accuracy, calibration, citation grounding, and resistance to prompt injection.
 
 It is part of the [sitkastack Framework](https://sitkastack.com), a public body of work on shipping audit-ready AI inside regulated mid-market companies. Everything here is intended to be forked, adapted, and pressure-tested against your own regulatory context.
 
 ## Status
 
-**Phase 0, Phase 1, and Phase 2 complete. Phase 3 upcoming.**
+**Phases 0 through 4 are live. The framework is feature-complete at the code level for vendor risk triage with full evaluation depth.**
 
-Phase 0 (Discovery & Risk Classification) is live. Three artifacts in [docs/phase-0/](docs/phase-0/) define the problem the agent solves, the regulatory frameworks the classification maps to, and the boundaries of what is in and out of scope.
+| Phase | Status |
+|---|---|
+| Phase 0: Discovery & Risk Classification | live |
+| Phase 1: Data Contracts & Privacy | live |
+| Phase 2: Architecture & Threat Model | live |
+| Phase 3: Agent + RAG + Ingestion + Eval | live |
+| Phase 4: Eval Depth + Retrieval Quality | live |
+| Phase 5: Operational Hardening | upcoming |
+| Phase 6: Production Polish | upcoming |
 
-Phase 1 (Data Contracts & Privacy) is live. The problem definition, out-of-scope document, input data contract, output data contract, privacy and data handling spec, synthetic data specification, and extension guide live in [docs/phase-1/](docs/phase-1/). Runnable example records ship alongside them in [examples/](examples/).
+Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across all seven Python packages.
 
-Phase 2 (Architecture & Threat Model) is live. Five artifacts in [docs/phase-2/](docs/phase-2/) cover the problem definition, the system architecture, the trust boundaries, the threat model, and the architecture decision records for the triage gate.
+## What's in this repository
 
-No agent code has been written yet. With the architecture and threat model now documented, the next focus is Phase 3 (Build & Eval): the agent implementation and its evaluation harness. Later phases add governance artifacts, deployment, and sunset planning. Ahead of Phase 3, the governance-as-code foundation already ships in this repo: standalone JSON Schemas in schemas/, a validation utility, threat detection skeletons in detection/, and CI enforcement. See the "Governance as code" section below.
+### Python packages
+
+`agent/` is the PydanticAI-based triage agent, vendor-agnostic across LLM providers. It accepts a submission plus optional pre-extracted documents and retrieved regulation chunks, and produces a structured `TriageRecord` conforming to the output contract.
+
+`ingestion/` is the PDF document parsing layer with bait-and-switch hash verification against the submission's claimed `content_hash` values. Any document whose extracted content fails the hash check causes the agent to refuse before any LLM call.
+
+`retrieval/` provides three retrieval strategies over regulation corpora. `BM25Index` is lexical retrieval via `rank-bm25`. `VectorIndex` is dense semantic retrieval over the `Embedder` Protocol (with `HashEmbedder` and `SentenceTransformerEmbedder` shipped). `HybridIndex` combines both via Reciprocal Rank Fusion. The `Retriever` wraps any of them uniformly.
+
+`eval/` is the graded-example evaluation harness. It runs the agent over a JSONL dataset and produces tier-accuracy, disposition-accuracy, and joint-accuracy metrics.
+
+`eval/attacks/` is a prompt-injection attack suite with 12 baseline attacks spanning 8 categories. Threats T-AI1 (prompt injection) and T-AI2 (output schema manipulation) are covered. Pass rate is reported overall, per category, and per threat ID.
+
+`eval/citations/` is the deterministic citation verifier. It resolves `input_field_reference` paths via a JSONPath-lite parser, extracts chunk_id mentions from reasoning text, and computes Jaccard token-overlap grounding scores. No LLM calls. Four distinct outcome statuses preserve audit signal a boolean would collapse.
+
+`eval/calibration/` is the calibration scorer: Brier score, Expected Calibration Error, Maximum Calibration Error, and reliability-diagram data over `(confidence_score, was_correct)` pairs. Tier, disposition, and both-match dimensions are configurable.
+
+`eval/judge/` is the LLM-as-judge harness. It wraps any PydanticAI Model and grades a TriageRecord against a `Rubric`. Three pre-built rubrics ship: rationale coherence, citation grounding, and mitigation appropriateness. Edge-case short-circuits handle vacuous cases without an LLM call. Audit traceability through `judge_model_version` and `run_timestamp`.
+
+### Documentation
+
+The phase-by-phase design documents live in `docs/`:
+
+- `docs/phase-0/` covers the problem definition, regulatory framework mapping, and scope boundaries
+- `docs/phase-1/` covers data contracts, privacy spec, synthetic data specification, and the extension guide
+- `docs/phase-2/` covers system architecture, trust boundaries, the full threat model (T-AI1 through T-AI8), and the architecture decision records
+- Each Python package additionally carries its own `README.md` with package-specific design rationale
+
+### Schemas and examples
+
+`schemas/` holds the JSON Schema 2020-12 contracts for input submissions and output records. `examples/` holds runnable example records validated against the schemas in CI on every push.
+
+## Installation
+
+```bash
+pip install -e .
+```
+
+Optional dense and hybrid retrieval (adds sentence-transformers, around 80MB for the default model):
+
+```bash
+pip install -e '.[vector]'
+```
+
+Development dependencies (pytest, pytest-cov):
+
+```bash
+pip install -e '.[dev]'
+```
+
+Python 3.11 or later required.
 
 ## Governance as code
 
 The framework's governance is partially executable, not just documented:
 
-- **Data contracts** are JSON Schema 2020-12 artifacts in schemas/. The Python utility in schemas/validate.py validates submissions and records against them; consumers in other languages use any 2020-12 validator. ADR-004 documents the closure properties (unevaluatedProperties: false, additionalProperties: false) the schemas enforce.
-- **Examples** in examples/ are verified against the schemas by tests/test_examples_validate.py, enforced on every push and PR by .github/workflows/validate.yml.
-- **Threat detection skeletons** in detection/ provide a callable function for each of the 27 threats documented in docs/phase-2/03-threat-model.md. The functions raise NotImplementedError until Phase 5 implements the detection logic, but the signatures and detection approach are committed in Phase 2. tests/test_detection_signatures.py enforces the signature contract.
-- **Style discipline** (no em dashes) is enforced in CI.
+- **Data contracts** are JSON Schema 2020-12 artifacts in `schemas/`. The Python utility in `schemas/validate.py` validates submissions and records against them. ADR-004 documents the closure properties (`unevaluatedProperties: false`, `additionalProperties: false`) the schemas enforce.
+- **Examples** in `examples/` are verified against the schemas by `tests/test_examples_validate.py`, enforced on every push and PR by `.github/workflows/validate.yml`.
+- **Bait-and-switch defense** is enforced at the agent boundary. Any document whose `content_hash` does not match the submission's claimed hash causes the agent to raise `TriageInputError` before any LLM call. See the threat model entry for T-AI4.
+- **Prompt-injection resistance** is measurable through the `eval/attacks/` suite. The baseline dataset covers T-AI1 and T-AI2; deploying organizations are expected to extend with attacks specific to their threat surface.
+- **Citation grounding** is measurable through `eval/citations/` (deterministic, token-overlap) and `eval/judge/` (semantic, LLM-graded).
+- **Confidence calibration** is measurable through `eval/calibration/`. Every TriageRecord carries a `confidence_signal.score`; the calibration scorer answers whether stated confidence corresponds to empirical accuracy.
+- **Style discipline** (no em dashes in prose) is enforced in CI.
 
-What is documented but not yet executable: most Phase 4 governance artifacts (model cards, DPIA templates, audit log schemas) ship in Phase 4; Phase 3 evaluation suites (bias, prompt injection resistance, hallucination) ship in Phase 3; Phase 5 implements the threat detection logic. The framework's commitment is that wherever governance can be machine-readable, it will be.
+What is still documented-only and not yet executable: model cards, DPIA templates, and the formal audit-log shipping format land in Phase 5. The framework's commitment is that wherever governance can be machine-readable, it will be.
 
 ## Roadmap
 
-- **Phase 0**: Discovery & Risk Classification (live)
-- **Phase 1**: Data Contracts & Privacy (live)
-- **Phase 2**: Architecture & Threat Model (live)
-- **Phase 3**: Build & Eval (upcoming)
-- **Phase 4**: Governance Artifacts (upcoming)
-- **Phase 5**: Deploy & Monitor (upcoming)
-- **Phase 6**: Sunset Planning (upcoming)
+Phase 5 (Operational Hardening) covers multi-tenant corpora, schema migration patterns, audit-log shipping format, drift detection, and persistent indexes. Closes most of the remaining `[deferred-phase-5]` tags.
 
-Phases ship when ready. Each phase lands as its own set of PRs with the design docs, code where applicable, tests, and eval results in the same commit history.
+Phase 6 (Production Polish) covers observability hooks, cost tracking, model fallback, CI/CD patterns for deployers, and performance optimization. Closes the remaining `[deferred-phase-4-followup]` and `[deferred-phase-6]` tags.
+
+The original Phase 7 (Sunset Planning) on the early roadmap will fold into Phase 6 if it lands at all. Decommissioning patterns for an AI system in regulated use are real but small in scope.
+
+Phases ship when ready. Each phase lands as its own set of commits with design docs, code, tests, and audit results in the same commit history.
+
+## Test discipline
+
+Every code commit lands with:
+
+- 100% line coverage on every Python package (enforced in CI at 95% with intent to hold 100%)
+- A 23-persona brutal audit pass with zero must-fix findings. The roster covers 15 always-on personas (Solution Arch, App Arch, Security Arch, Data Arch, Cloud/Infra Arch, Integration Arch, Enterprise Arch, Tech Lead, two Peer Devs, QA Eng, AppSec Eng, Performance Eng, Tech Writer, Product Mgr), 9 certified-AI-governance personas (CISA, CISM, CRISC, CDPSE, CCOA, AAIA, AAIR, AAISM, CGEIT), and competitive-defense review.
+- Three stability runs of the full test suite at the same passing count
+
+Coverage and tests are enforced in CI. The audit discipline is enforced by the author.
 
 ## How to follow along
 
 - Watch this repo for new phases as they land
-- Read the Phase 0 docs in [docs/phase-0/](docs/phase-0/), which are numbered and intended to be read in order
+- Read the docs phase by phase. They are numbered and intended to be read in order.
+- Each Python package carries its own README walking through design rationale
 - Follow [sitkastack.com](https://sitkastack.com) for the broader framework context
 - Open an issue if something is unclear, wrong, or contradicts your real-world experience
 
@@ -56,20 +125,22 @@ Phases ship when ready. Each phase lands as its own set of PRs with the design d
 
 This is intentionally honest:
 
-- **v0.3 reference, not production-grade audit defense.** The framework documents the discipline; Phase 3 ships the agent code and evaluation suites that turn discipline into running software. Do not point this at a real vendor onboarding flow and assume the output will hold up under regulatory scrutiny. It is a starting point.
-- **Artifacts are adaptable templates, not finished compliance deliverables.** The model card, audit log schema, and risk taxonomy are designed to be modified for your specific regulatory context (sector, jurisdiction, internal control framework). They will not survive a serious audit unchanged.
+- **Reference implementation, not production audit defense out of the box.** Phases 0 through 4 ship the code and the evaluation discipline. Production readiness (Phase 5 and 6) covers operational concerns: corpus management, drift detection, audit-log export, deployment patterns. Do not point Phase 4 at a real vendor onboarding flow and assume the output will hold up under regulatory scrutiny without the Phase 5 and 6 work plus organization-specific calibration.
+- **Real regulation corpora are user-provided.** The framework ships the retrieval machinery and a synthetic test corpus. Real corpora (OSFI E-23, ISO 42001, NIST AI RMF, EU AI Act, SOX/ICFR) are licensed differently and not redistributed. Deploying organizations provision their own authorised copies.
+- **Calibration sample is small.** The bundled graded baseline has 8 examples, useful for exercising the math but too small for production calibration claims. Real calibration measurement requires hundreds to thousands of graded examples specific to the deploying organization.
+- **LLM-as-judge is non-deterministic and can itself hallucinate.** The judge is an LLM. Cross-model judging (different model from the triage agent) is recommended but not enforced. Treat judge scores as one signal among several, not as ground truth.
+- **Artifacts are adaptable templates, not finished compliance deliverables.** The risk taxonomy and contracts are designed to be modified for your specific regulatory context. They will not survive a serious audit unchanged.
 - **Solo work, no external peer review at this stage.** Everything here reflects one author's judgment. Issues and PRs from practitioners with real audit and procurement experience are explicitly welcome.
-- **The five-question audit-ready framework referenced in the docs is a starter, not a comprehensive audit methodology.** It is a useful filter for early-stage triage, not a substitute for a real assurance program.
 
 If you spot something that is wrong or oversimplified, opening an issue is the most useful thing you can do.
 
 ## Examples
 
-The examples/ directory contains illustrative JSON files engineers use to verify their integrations against the Phase 1 contracts. Every example is verified to validate against its schema by tests/test_examples_validate.py, enforced in CI on every push and PR.
+The `examples/` directory contains illustrative JSON files used to verify integrations against the Phase 1 contracts. Every example validates against its schema in CI on every push and PR.
 
-- examples/input-submission.example.json: a valid input submission, validates against the Input Contract schema
-- examples/triage-record.example.json: a valid triage record paired with the input example, validates against the Output Contract schema
-- examples/validation-error.example.json: illustrative shape of a structured validation error response from the intake validator
+- `examples/input-submission.example.json` is a valid input submission against the Input Contract schema
+- `examples/triage-record.example.json` is a valid triage record paired with the input example, against the Output Contract schema
+- `examples/validation-error.example.json` is the shape of a structured validation error response from the intake validator
 
 ## License
 
