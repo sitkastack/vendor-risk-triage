@@ -177,16 +177,50 @@ class ConfidenceSignal(BaseModel):
     together so a reader is not left to interpret a bare number. Calibration
     of the score itself is a Phase 3 eval-harness concern.
 
+    Cross-field invariant: the interpretation band must match the score per
+    the boundaries below. This is enforced here at the contract layer so a
+    record loaded from disk cannot have a mismatched band, regardless of
+    how it was produced:
+
+    - score < 0.5 -> low
+    - 0.5 <= score < 0.8 -> moderate
+    - score >= 0.8 -> high
+
+    Boundary values 0.5 and 0.8 belong to the upper band.
+
     Attributes:
         score: Confidence from 0.0 to 1.0 as reported by the agent.
         interpretation: Banded interpretation of the score: ``low``,
-            ``moderate``, or ``high``.
+            ``moderate``, or ``high``. Must match the band the score
+            falls into.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     score: float = Field(ge=0.0, le=1.0)
     interpretation: ConfidenceBand
+
+    @model_validator(mode="after")
+    def _enforce_band_matches_score(self) -> "ConfidenceSignal":
+        """Reject mismatched score and interpretation.
+
+        An auditor asking why a record claims "moderate" confidence with a
+        score of 0.95 deserves a coherent answer. Enforcing the band-to-score
+        mapping at the contract layer means no such record can exist.
+        """
+        if self.score < 0.5:
+            expected = "low"
+        elif self.score < 0.8:
+            expected = "moderate"
+        else:
+            expected = "high"
+        if self.interpretation != expected:
+            raise ValueError(
+                f"confidence_signal.interpretation={self.interpretation!r} "
+                f"does not match score={self.score}; expected {expected!r} "
+                "(band boundaries: <0.5 low, [0.5, 0.8) moderate, >=0.8 high)"
+            )
+        return self
 
 
 class TriageRecord(BaseModel):

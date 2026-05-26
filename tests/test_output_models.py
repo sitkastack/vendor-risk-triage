@@ -251,6 +251,60 @@ def test_rejects_confidence_score_out_of_range(bad_score: float) -> None:
         make_record("tier_1_low", confidence_signal={"score": bad_score})
 
 
+@pytest.mark.parametrize("bad_score", [
+    float("nan"),
+    float("inf"),
+    float("-inf"),
+])
+def test_rejects_confidence_score_non_finite(bad_score: float) -> None:
+    """confidence_signal.score rejects NaN, +Inf, -Inf.
+
+    Pydantic v2's ``ge=0.0, le=1.0`` constraint rejects all three implicitly
+    (NaN compares as neither >= nor <= anything; Inf fails the upper bound;
+    -Inf fails the lower bound). This test locks in that behavior so a
+    future Pydantic change that silently accepts non-finite floats is
+    caught loudly. Non-finite scores in an audit record would break any
+    downstream confidence aggregation.
+    """
+    with pytest.raises(ValidationError):
+        make_record("tier_1_low", confidence_signal={"score": bad_score})
+
+
+def test_accepts_unicode_in_accountable_owner() -> None:
+    """Role names may contain Unicode (international names, accented chars).
+
+    Locks the current intentional behavior: Unicode is accepted in role
+    names. Hardening against bidirectional/homoglyph attacks is tagged
+    [deferred-phase-4] in the agent/output_models.py module docstring;
+    until that work lands, role names like "Senior Risk Manager" and
+    "Sénior Risk Manager" are both accepted as written.
+    """
+    base = json.loads(EXAMPLE_PATH.read_text())
+    base["recommended_disposition"] = "escalate_senior_review"
+    base["accountable_owner"] = "Сеньор Vendor Risk Manager"
+    record = TriageRecord.model_validate(base)
+    assert record.accountable_owner == "Сеньор Vendor Risk Manager"
+
+
+def test_zero_width_chars_in_accountable_owner_currently_accepted() -> None:
+    """Zero-width characters are currently accepted in accountable_owner.
+
+    This is a known weakness: a homoglyph-style attack could embed
+    U+200B (zero-width space) to make role names look identical to
+    legitimate roles while differing in storage. Defense is tagged
+    [deferred-phase-4] (Unicode bidi/homoglyph defenses) in the module
+    docstring. This test pins the current behavior so the eventual
+    hardening is a deliberate, visible change rather than a silent fix.
+    """
+    base = json.loads(EXAMPLE_PATH.read_text())
+    base["recommended_disposition"] = "escalate_senior_review"
+    base["accountable_owner"] = "Senior\u200bRisk Manager"  # ZWSP
+    record = TriageRecord.model_validate(base)
+    # Currently accepted; the test asserts the present-day behavior so a
+    # future change (Phase 4 hardening) breaks this test deliberately.
+    assert record.accountable_owner == "Senior\u200bRisk Manager"
+
+
 @pytest.mark.parametrize("bad_band", ["very_high", "LOW", "extreme", ""])
 def test_rejects_invalid_confidence_interpretation(bad_band: str) -> None:
     """confidence_signal.interpretation must be low/moderate/high."""
@@ -259,6 +313,61 @@ def test_rejects_invalid_confidence_interpretation(bad_band: str) -> None:
             "tier_1_low",
             confidence_signal={"interpretation": bad_band},
         )
+
+
+@pytest.mark.parametrize("score,band", [
+    (0.95, "low"),         # high score, low band
+    (0.95, "moderate"),    # high score, moderate band
+    (0.3, "high"),         # low score, high band
+    (0.3, "moderate"),     # low score, moderate band
+    (0.6, "low"),          # moderate score, low band
+    (0.6, "high"),         # moderate score, high band
+    (0.0, "moderate"),     # boundary: 0.0 must be low
+    (0.49, "moderate"),    # just below 0.5 must be low
+    (0.5, "low"),          # 0.5 is moderate, not low
+    (0.79, "high"),        # just below 0.8 must be moderate
+    (0.8, "moderate"),     # 0.8 is high, not moderate
+    (1.0, "low"),          # 1.0 is high
+])
+def test_confidence_signal_rejects_mismatched_band(
+    score: float, band: str
+) -> None:
+    """ConfidenceSignal enforces band-matches-score at the contract layer.
+
+    This check is intentionally also enforced in agent.agent._TriageClassification's
+    validator at the LLM-output layer (so PydanticAI retries on mistakes), but
+    the contract-layer enforcement here ensures records loaded from disk or
+    constructed outside the agent path also conform.
+
+    Boundary rule: 0.5 belongs to moderate, 0.8 belongs to high.
+    """
+    with pytest.raises(ValidationError):
+        make_record(
+            "tier_1_low",
+            confidence_signal={"score": score, "interpretation": band},
+        )
+
+
+@pytest.mark.parametrize("score,band", [
+    (0.0, "low"),
+    (0.49, "low"),
+    (0.5, "moderate"),     # boundary
+    (0.65, "moderate"),
+    (0.79, "moderate"),
+    (0.8, "high"),         # boundary
+    (0.9, "high"),
+    (1.0, "high"),
+])
+def test_confidence_signal_accepts_matched_band(
+    score: float, band: str
+) -> None:
+    """ConfidenceSignal accepts every score/band combination that respects the boundaries."""
+    record = make_record(
+        "tier_1_low",
+        confidence_signal={"score": score, "interpretation": band},
+    )
+    assert record.confidence_signal.score == score
+    assert record.confidence_signal.interpretation == band
 
 
 @pytest.mark.parametrize("bad_version", [

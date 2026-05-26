@@ -10,6 +10,7 @@ readme = "README.md"
 dependencies = [
     "jsonschema>=4.0.0",
     "pydantic>=2.6.4,<3",
+    "pydantic-ai-slim[anthropic]>=1.0,<2",
 ]
 
 [project.optional-dependencies]
