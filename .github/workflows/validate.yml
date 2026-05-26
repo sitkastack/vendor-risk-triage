@@ -38,8 +38,8 @@ jobs:
               print(f'OK: {schema_file} is valid JSON Schema 2020-12')
           "
 
-      - name: Run pytest
-        run: pytest -v
+      - name: Run pytest with coverage
+        run: pytest -v --cov=agent --cov-report=term-missing --cov-fail-under=95
 
       - name: Check for em dashes in markdown
         run: |
