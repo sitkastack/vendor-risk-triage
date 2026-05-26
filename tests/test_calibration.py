@@ -426,3 +426,181 @@ def test_overall_metrics_match_summation_over_outcomes() -> None:
     r = compute_calibration(outcomes)
     assert r.accuracy == 0.5  # 2 of 4 correct
     assert r.mean_confidence == pytest.approx(0.5)  # mean of 0.2 + 0.4 + 0.6 + 0.8 = 0.5
+
+
+# -- tier breakdown -------------------------------------------------------
+
+
+def _tiered_outcome(score: float, correct: bool, tier: str) -> ConfidenceOutcome:
+    return ConfidenceOutcome(confidence_score=score, was_correct=correct, tier=tier)
+
+
+def test_confidence_outcome_tier_defaults_to_none() -> None:
+    """Existing callers not passing tier produce outcomes with tier=None."""
+    o = ConfidenceOutcome(confidence_score=0.5, was_correct=True)
+    assert o.tier is None
+
+
+def test_confidence_outcome_accepts_tier_string() -> None:
+    """The new tier field accepts arbitrary strings (caller responsibility to match contract)."""
+    o = ConfidenceOutcome(confidence_score=0.5, was_correct=True, tier="tier_2_moderate")
+    assert o.tier == "tier_2_moderate"
+
+
+def test_tier_breakdown_empty_input() -> None:
+    """Empty outcomes -> empty by_tier dict + vacuous overall."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    r = compute_tier_breakdown_calibration([])
+    assert r.overall.total_predictions == 0
+    assert r.by_tier == {}
+
+
+def test_tier_breakdown_no_tier_excluded_from_breakdown() -> None:
+    """Outcomes with tier=None are counted in overall but not the breakdown."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    outcomes = [
+        _outcome(0.5, True),  # tier=None
+        _outcome(0.7, False),
+    ]
+    r = compute_tier_breakdown_calibration(outcomes)
+    assert r.overall.total_predictions == 2
+    assert r.by_tier == {}
+
+
+def test_tier_breakdown_groups_outcomes_by_tier() -> None:
+    """Outcomes with the same tier land in the same breakdown bucket."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    outcomes = [
+        _tiered_outcome(0.95, True,  "tier_1_low"),
+        _tiered_outcome(0.85, True,  "tier_1_low"),
+        _tiered_outcome(0.55, True,  "tier_3_elevated"),
+        _tiered_outcome(0.65, False, "tier_3_elevated"),
+        _tiered_outcome(0.45, False, "tier_3_elevated"),
+    ]
+    r = compute_tier_breakdown_calibration(outcomes)
+    assert set(r.by_tier.keys()) == {"tier_1_low", "tier_3_elevated"}
+    assert r.by_tier["tier_1_low"].total_predictions == 2
+    assert r.by_tier["tier_3_elevated"].total_predictions == 3
+
+
+def test_tier_breakdown_overall_matches_compute_calibration() -> None:
+    """The overall report equals what compute_calibration would produce on the same outcomes."""
+    from eval.calibration import compute_calibration, compute_tier_breakdown_calibration
+
+    outcomes = [
+        _tiered_outcome(0.9, True,  "tier_1_low"),
+        _tiered_outcome(0.6, False, "tier_3_elevated"),
+        _tiered_outcome(0.7, True,  "tier_2_moderate"),
+    ]
+    tiered = compute_tier_breakdown_calibration(outcomes)
+    plain = compute_calibration(outcomes)
+
+    assert tiered.overall.total_predictions == plain.total_predictions
+    assert tiered.overall.brier_score == pytest.approx(plain.brier_score)
+    assert tiered.overall.expected_calibration_error == pytest.approx(plain.expected_calibration_error)
+    assert tiered.overall.accuracy == pytest.approx(plain.accuracy)
+
+
+def test_tier_breakdown_per_tier_brier_correct() -> None:
+    """Per-tier Brier scores are computed correctly within each tier slice."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    # tier_1: confidence=1.0 always, always correct -> Brier 0.0
+    # tier_4: confidence=1.0 always, always wrong   -> Brier 1.0
+    outcomes = [
+        _tiered_outcome(1.0, True,  "tier_1_low"),
+        _tiered_outcome(1.0, True,  "tier_1_low"),
+        _tiered_outcome(1.0, False, "tier_4_high"),
+        _tiered_outcome(1.0, False, "tier_4_high"),
+    ]
+    r = compute_tier_breakdown_calibration(outcomes)
+    assert r.by_tier["tier_1_low"].brier_score == pytest.approx(0.0)
+    assert r.by_tier["tier_4_high"].brier_score == pytest.approx(1.0)
+
+
+def test_tier_breakdown_dimension_recorded_on_each_report() -> None:
+    """The dimension argument flows through to overall AND every per-tier report."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    outcomes = [
+        _tiered_outcome(0.7, True,  "tier_2_moderate"),
+        _tiered_outcome(0.4, False, "tier_2_moderate"),
+    ]
+    r = compute_tier_breakdown_calibration(outcomes, dimension="disposition")
+    assert r.overall.dimension == "disposition"
+    assert r.by_tier["tier_2_moderate"].dimension == "disposition"
+
+
+def test_tier_breakdown_report_is_frozen() -> None:
+    """TieredCalibrationReport is immutable."""
+    from eval.calibration import (
+        TieredCalibrationReport,
+        compute_tier_breakdown_calibration,
+    )
+
+    r = compute_tier_breakdown_calibration([_tiered_outcome(0.5, True, "tier_1_low")])
+    assert isinstance(r, TieredCalibrationReport)
+    with pytest.raises(ValidationError):
+        r.overall = r.overall  # type: ignore[misc]
+
+
+def test_tier_breakdown_from_report_uses_predicted_tier_not_expected() -> None:
+    """Breakdown groups by the AGENT'S predicted tier (record.risk_tier), not expected.
+
+    This matters for production drift monitoring: in production the expected
+    tier is often unknown, but the agent's predicted tier always is.
+    """
+    from eval.calibration import compute_tier_breakdown_calibration_from_report
+
+    # Agent predicts tier_1_low; expected is tier_3_elevated (misclassification)
+    res = _make_example_result(
+        actual_tier="tier_1_low",
+        expected_tier="tier_3_elevated",
+        confidence=0.9,
+    )
+    report = _make_report([res])
+    r = compute_tier_breakdown_calibration_from_report(report)
+    # The outcome lands under tier_1_low (predicted), not tier_3_elevated (expected)
+    assert "tier_1_low" in r.by_tier
+    assert "tier_3_elevated" not in r.by_tier
+
+
+def test_tier_breakdown_from_report_skips_errored_examples() -> None:
+    """Same convention as compute_calibration_from_report."""
+    from eval.calibration import compute_tier_breakdown_calibration_from_report
+
+    success = _make_example_result(
+        actual_tier="tier_2_moderate",
+        expected_tier="tier_2_moderate",
+    )
+    errored = ExampleResult(
+        example_id="ex-err",
+        expected_tier="tier_2_moderate",  # type: ignore[arg-type]
+        expected_disposition="conditional_approve",  # type: ignore[arg-type]
+        record=None,
+        error_message="agent raised",
+    )
+    report = _make_report([success, errored])
+    r = compute_tier_breakdown_calibration_from_report(report)
+    assert r.overall.total_predictions == 1
+
+
+def test_tier_breakdown_num_bins_flows_through() -> None:
+    """The num_bins argument flows through to every report in the breakdown."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    outcomes = [_tiered_outcome(0.5, True, "tier_1_low")]
+    r = compute_tier_breakdown_calibration(outcomes, num_bins=5)
+    assert len(r.overall.bins) == 5
+    assert len(r.by_tier["tier_1_low"].bins) == 5
+
+
+def test_tier_breakdown_num_bins_validation() -> None:
+    """Invalid num_bins surfaces via compute_calibration."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    with pytest.raises(ValueError, match="num_bins"):
+        compute_tier_breakdown_calibration([], num_bins=0)

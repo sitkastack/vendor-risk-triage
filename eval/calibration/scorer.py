@@ -51,8 +51,11 @@ __all__ = [
     "CalibrationDimension",
     "CalibrationReport",
     "ConfidenceOutcome",
+    "TieredCalibrationReport",
     "compute_calibration",
     "compute_calibration_from_report",
+    "compute_tier_breakdown_calibration",
+    "compute_tier_breakdown_calibration_from_report",
 ]
 
 
@@ -73,12 +76,17 @@ class ConfidenceOutcome(BaseModel):
             for this prediction, in [0, 1].
         was_correct: Whether the prediction was correct for the
             chosen calibration dimension.
+        tier: Optional predicted tier for this outcome. Required only
+            when used with compute_tier_breakdown_calibration; ignored
+            by compute_calibration. Matches the agent's predicted
+            risk_tier value.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     confidence_score: float = Field(ge=0.0, le=1.0)
     was_correct: bool
+    tier: Optional[str] = None
 
 
 class BinStats(BaseModel):
@@ -289,6 +297,127 @@ def compute_calibration_from_report(
             was_correct=was_correct,
         ))
     return compute_calibration(outcomes, dimension=dimension, num_bins=num_bins)
+
+
+# -- tier breakdown -------------------------------------------------------
+
+
+class TieredCalibrationReport(BaseModel):
+    """Calibration with both overall and per-tier breakdowns.
+
+    Where CalibrationReport answers "how calibrated is the agent
+    overall?", TieredCalibrationReport answers "how calibrated is the
+    agent within each predicted risk tier?". An auditor's natural
+    question: "your overall ECE is 0.08, but is your tier_3_elevated
+    ECE the same as your tier_1_low ECE?"
+
+    The per-tier breakdown keys are the predicted tier values that
+    actually appear in the input outcomes. Tiers with zero outcomes
+    are omitted from the by_tier dict (rather than producing a
+    vacuous-zeros report that could be misread as data).
+
+    Attributes:
+        overall: The CalibrationReport computed across all outcomes
+            regardless of tier. Identical to what compute_calibration
+            would produce.
+        by_tier: Per-tier CalibrationReports keyed by predicted tier
+            string. Empty if every outcome lacks a tier value (which
+            indicates a caller bug; documented).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    overall: CalibrationReport
+    by_tier: dict[str, CalibrationReport]
+
+
+def compute_tier_breakdown_calibration(
+    outcomes: list[ConfidenceOutcome],
+    dimension: CalibrationDimension = "tier",
+    num_bins: int = 10,
+) -> TieredCalibrationReport:
+    """Compute calibration overall and per predicted tier.
+
+    Each ConfidenceOutcome must carry a non-None tier value. Outcomes
+    with tier=None are included in the overall report but excluded
+    from the per-tier breakdown.
+
+    Args:
+        outcomes: List of (confidence_score, was_correct, tier) data
+            points. May be empty. Outcomes without tier are still
+            counted in the overall report.
+        dimension: Recorded on each report for audit traceability.
+            Does not change the math.
+        num_bins: Number of equal-width bins partitioning [0, 1].
+            Default 10.
+
+    Returns:
+        A TieredCalibrationReport containing the overall report and
+        the per-tier breakdown.
+
+    Raises:
+        ValueError: If num_bins is less than 1.
+    """
+    overall = compute_calibration(outcomes, dimension=dimension, num_bins=num_bins)
+
+    by_tier_outcomes: dict[str, list[ConfidenceOutcome]] = {}
+    for o in outcomes:
+        if o.tier is None:
+            continue
+        by_tier_outcomes.setdefault(o.tier, []).append(o)
+
+    by_tier: dict[str, CalibrationReport] = {
+        tier: compute_calibration(tier_outcomes, dimension=dimension, num_bins=num_bins)
+        for tier, tier_outcomes in by_tier_outcomes.items()
+    }
+
+    return TieredCalibrationReport(overall=overall, by_tier=by_tier)
+
+
+def compute_tier_breakdown_calibration_from_report(
+    report: EvalReport,
+    dimension: CalibrationDimension = "tier",
+    num_bins: int = 10,
+) -> TieredCalibrationReport:
+    """Compute tier-breakdown calibration from an EvalReport.
+
+    Extracts confidence_signal.score AND the agent's predicted
+    risk_tier from each ExampleResult. The tier dimension of the
+    breakdown is the AGENT'S PREDICTED tier, not the expected tier:
+    "for predictions where the agent said tier_3, was it well-
+    calibrated?" This is the more useful production-monitoring
+    framing, since the expected tier is not always known but the
+    predicted tier always is.
+
+    ExampleResults that errored (record is None) are skipped.
+
+    Args:
+        report: An EvalReport from running an agent over a graded
+            dataset.
+        dimension: Which dimension grades was_correct. Default "tier".
+        num_bins: Equal-width bins over [0, 1]. Default 10.
+
+    Returns:
+        A TieredCalibrationReport. Empty by_tier if no examples
+        produced records.
+    """
+    outcomes: list[ConfidenceOutcome] = []
+    for example in report.results:
+        if example.record is None:
+            continue
+        was_correct = _is_correct(
+            example.record.risk_tier,
+            example.record.recommended_disposition,
+            example.expected_tier,
+            example.expected_disposition,
+            dimension,
+        )
+        outcomes.append(ConfidenceOutcome(
+            confidence_score=example.record.confidence_signal.score,
+            was_correct=was_correct,
+            tier=example.record.risk_tier,
+        ))
+    return compute_tier_breakdown_calibration(outcomes, dimension=dimension, num_bins=num_bins)
 
 
 # -- private helpers -------------------------------------------------------

@@ -4,8 +4,11 @@ from eval.calibration.scorer import (
     CalibrationDimension,
     CalibrationReport,
     ConfidenceOutcome,
+    TieredCalibrationReport,
     compute_calibration,
     compute_calibration_from_report,
+    compute_tier_breakdown_calibration,
+    compute_tier_breakdown_calibration_from_report,
 )
 
 
@@ -14,6 +17,9 @@ __all__ = [
     "CalibrationDimension",
     "CalibrationReport",
     "ConfidenceOutcome",
+    "TieredCalibrationReport",
     "compute_calibration",
     "compute_calibration_from_report",
+    "compute_tier_breakdown_calibration",
+    "compute_tier_breakdown_calibration_from_report",
 ]

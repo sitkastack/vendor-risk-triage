@@ -170,12 +170,38 @@ Calibration is also model-and-corpus-specific. A LLM tuned on one
 domain will not necessarily be calibrated on another. Re-measure when
 the model changes, the dataset changes, or the prompt changes.
 
+## Per-tier breakdown
+
+A single calibration number across all predictions can hide tier-specific miscalibration. An agent might be well-calibrated overall (ECE 0.08) while being severely miscalibrated on tier_3_elevated (ECE 0.20). Auditors ask this question routinely: "is your tier-3 calibration the same as your tier-1?"
+
+`compute_tier_breakdown_calibration()` answers it. Pass `ConfidenceOutcome` instances carrying the predicted `tier` and the function returns a `TieredCalibrationReport` containing both the overall report and per-tier reports keyed by predicted tier.
+
+```python
+from eval.calibration import (
+    ConfidenceOutcome,
+    compute_tier_breakdown_calibration,
+)
+
+outcomes = [
+    ConfidenceOutcome(confidence_score=0.95, was_correct=True,  tier="tier_1_low"),
+    ConfidenceOutcome(confidence_score=0.55, was_correct=False, tier="tier_3_elevated"),
+    # ...
+]
+
+r = compute_tier_breakdown_calibration(outcomes)
+print(f"Overall ECE: {r.overall.expected_calibration_error:.3f}")
+for tier, report in sorted(r.by_tier.items()):
+    print(f"  {tier}: ECE={report.expected_calibration_error:.3f}, n={report.total_predictions}")
+```
+
+The convenience entry point `compute_tier_breakdown_calibration_from_report()` pulls the predicted tier from `record.risk_tier`. The breakdown groups by the AGENT'S predicted tier, not the expected tier; this is the more useful production-monitoring framing since the expected tier is not always known.
+
+Tiers with zero outcomes are omitted from the `by_tier` dict rather than producing vacuous-zeros reports.
+
 ## Deferred
 
 - `[deferred-phase-4-followup]` Equal-frequency (quantile) binning option
 - `[deferred-phase-4-followup]` Reliability diagram rendering (SVG)
-- `[deferred-phase-4-followup]` Per-tier calibration breakdown (a
-  calibration story per tier class, surfaces tier-specific
-  miscalibration)
 - `[deferred-phase-5]` Bootstrap confidence intervals on ECE / Brier
 - `[deferred-phase-5]` Calibration drift detection across time windows
+- `[deferred-phase-5]` Per-disposition calibration breakdown (analogous to per-tier)
