@@ -1,4 +1,5 @@
 """Calibration measurement for the vendor risk triage agent."""
+from eval.calibration.diagram import render_reliability_diagram
 from eval.calibration.scorer import (
     BinningMethod,
     BinStats,
@@ -24,4 +25,5 @@ __all__ = [
     "compute_calibration_from_report",
     "compute_tier_breakdown_calibration",
     "compute_tier_breakdown_calibration_from_report",
+    "render_reliability_diagram",
 ]

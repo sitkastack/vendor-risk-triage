@@ -219,9 +219,42 @@ The convenience entry point `compute_tier_breakdown_calibration_from_report()` p
 
 Tiers with zero outcomes are omitted from the `by_tier` dict rather than producing vacuous-zeros reports.
 
+## Reliability diagram rendering
+
+The numerical metrics are sufficient for programmatic analysis but not for human audit review. Auditors read charts. The `render_reliability_diagram()` function converts a `CalibrationReport` into an SVG string ready to embed in HTML, include in PDF audit bundles, or write to a `.svg` file for standalone viewing.
+
+```python
+from eval.calibration import compute_calibration, render_reliability_diagram
+
+report = compute_calibration(outcomes, binning="equal_frequency")
+svg = render_reliability_diagram(report)
+
+# Embed in HTML
+html = f"<!DOCTYPE html><html><body>{svg}</body></html>"
+
+# Or write standalone
+with open("calibration.svg", "w") as f:
+    f.write(svg)
+```
+
+The chart follows the standard reliability diagram convention (Niculescu-Mizil & Caruana 2005):
+
+- X axis: predicted confidence in `[0, 1]`
+- Y axis: empirical accuracy in `[0, 1]`
+- Dashed diagonal: perfect calibration reference (y = x)
+- Per-bin bars: each non-empty bin renders a bar spanning `[lower_bound, upper_bound]` on x, with height equal to the bin's empirical accuracy
+- Subtitle: ECE, MCE, Brier, N, and the dimension used for grading
+- Per-bin tooltip: SVG `<title>` elements give hover-text with count, mean_confidence, and accuracy for each bar (visible in browsers and SVG-aware viewers)
+
+Bars sitting below the diagonal indicate overconfidence (predicted higher than actual accuracy). Bars above the diagonal indicate underconfidence. Bar position and width work correctly for both binning methods: equal-width bins span fixed `[i/k, (i+1)/k)` ranges; equal-frequency bins span the descriptive min-to-max confidence range within each bucket.
+
+Empty bins are skipped in the main plot (no `mean_confidence` to plot at). Vacuous reports (total_predictions=0) render with axes and reference line but no bars, with a subtitle noting the lack of data.
+
+The renderer has no external dependencies beyond pydantic. The output is pure SVG text, diffable across commits.
+
 ## Deferred
 
-- `[deferred-phase-4-followup]` Reliability diagram rendering (SVG)
+- `[deferred-phase-4-followup]` Reliability diagram grid for tier breakdowns (one panel per tier)
 - `[deferred-phase-5]` Bootstrap confidence intervals on ECE / Brier
 - `[deferred-phase-5]` Calibration drift detection across time windows
 - `[deferred-phase-5]` Per-disposition calibration breakdown (analogous to per-tier)
