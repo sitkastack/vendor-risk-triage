@@ -690,3 +690,232 @@ def test_test_model_default_path_runs_without_raising() -> None:
     assert record.agent_version == agent.agent_version
     # The TestModel default still has to satisfy the schema.
     OUTPUT_VALIDATOR.validate(record.model_dump(mode="json"))
+
+
+# -- documents parameter (sub-system 4 integration) -------------------------
+
+
+def _make_document(
+    source_reference: str = "internal://docstore/test.pdf",
+    artifact_type: str = "soc2_report",
+    content_hash: str = "sha256:" + "a" * 64,
+    extracted_text: str = "Sample extracted text from the vendor document.",
+) -> Any:
+    """Build a Document with sensible defaults; tests override per case."""
+    from ingestion import Document
+    return Document(
+        source_reference=source_reference,
+        artifact_type=artifact_type,
+        page_count=1,
+        extracted_text=extracted_text,
+        pages=[extracted_text],
+        content_hash=content_hash,
+    )
+
+
+def _submission_with_documentation_artifact(
+    reference: str = "internal://docstore/test.pdf",
+    content_hash: str | None = None,
+    artifact_type: str = "soc2_report",
+) -> dict[str, Any]:
+    """Build a baseline submission whose documentation_artifacts contains
+    exactly one entry pointing at ``reference``."""
+    submission = json.loads(json.dumps(SUBMISSION))  # deep copy
+    artifact: dict[str, Any] = {
+        "artifact_type": artifact_type,
+        "reference": reference,
+    }
+    if content_hash is not None:
+        artifact["content_hash"] = content_hash
+    submission["documentation_artifacts"] = [artifact]
+    return submission
+
+
+def test_triage_documents_none_is_backward_compatible() -> None:
+    """Calling triage without the documents arg preserves prior behaviour."""
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    record_no_arg = agent.triage(SUBMISSION)
+    record_explicit_none = agent.triage(SUBMISSION, documents=None)
+    assert record_no_arg.risk_tier == record_explicit_none.risk_tier
+    assert record_no_arg.recommended_disposition == record_explicit_none.recommended_disposition
+
+
+def test_triage_empty_documents_list_is_equivalent_to_none() -> None:
+    """An empty list of documents behaves identically to None."""
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    record = agent.triage(SUBMISSION, documents=[])
+    assert isinstance(record, TriageRecord)
+
+
+def test_triage_single_document_flows_into_prompt() -> None:
+    """A supplied document's content reaches the LLM in a BEGIN_DOCUMENT block.
+
+    Verifies via FunctionModel: the function inspects the prompt the agent
+    constructed and asserts on what the LLM would have seen.
+    """
+    seen_prompts: list[str] = []
+
+    def _spy(messages: Any, info: Any) -> ModelResponse:
+        for msg in messages:
+            for part in getattr(msg, "parts", []):
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    seen_prompts.append(content)
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_spy)))
+    submission = _submission_with_documentation_artifact()
+    doc = _make_document(
+        extracted_text="Vendor SOC 2 report content with CC6.1 control description."
+    )
+    agent.triage(submission, documents=[doc])
+
+    full_prompt = "".join(seen_prompts)
+    assert "BEGIN_DOCUMENT" in full_prompt
+    assert "END_DOCUMENT" in full_prompt
+    assert "Vendor SOC 2 report content with CC6.1" in full_prompt
+    assert "source_reference: internal://docstore/test.pdf" in full_prompt
+    assert "artifact_type: soc2_report" in full_prompt
+
+
+def test_triage_multiple_documents_render_in_order() -> None:
+    """Multiple documents render in the order supplied."""
+    seen_prompts: list[str] = []
+
+    def _spy(messages: Any, info: Any) -> ModelResponse:
+        for msg in messages:
+            for part in getattr(msg, "parts", []):
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    seen_prompts.append(content)
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_spy)))
+    submission = json.loads(json.dumps(SUBMISSION))
+    submission["documentation_artifacts"] = [
+        {"artifact_type": "soc2_report", "reference": "internal://docstore/first.pdf"},
+        {"artifact_type": "model_card", "reference": "internal://docstore/second.pdf"},
+    ]
+    doc1 = _make_document(
+        source_reference="internal://docstore/first.pdf",
+        artifact_type="soc2_report",
+        extracted_text="FIRST DOCUMENT CONTENT MARKER",
+        content_hash="sha256:" + "1" * 64,
+    )
+    doc2 = _make_document(
+        source_reference="internal://docstore/second.pdf",
+        artifact_type="model_card",
+        extracted_text="SECOND DOCUMENT CONTENT MARKER",
+        content_hash="sha256:" + "2" * 64,
+    )
+    agent.triage(submission, documents=[doc1, doc2])
+
+    full_prompt = "".join(seen_prompts)
+    idx_first = full_prompt.index("FIRST DOCUMENT CONTENT MARKER")
+    idx_second = full_prompt.index("SECOND DOCUMENT CONTENT MARKER")
+    assert idx_first < idx_second, "documents must render in supplied order"
+
+
+def test_triage_raises_when_document_reference_not_in_submission() -> None:
+    """A document whose source_reference does not match any artifact errors."""
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    submission = _submission_with_documentation_artifact(
+        reference="internal://docstore/declared.pdf"
+    )
+    rogue = _make_document(source_reference="internal://docstore/unrelated.pdf")
+    with pytest.raises(TriageInputError) as excinfo:
+        agent.triage(submission, documents=[rogue])
+    msg = str(excinfo.value)
+    assert "unrelated.pdf" in msg
+    assert "documentation_artifacts" in msg
+
+
+def test_triage_raises_on_content_hash_mismatch() -> None:
+    """A document's content_hash differing from the submission's claim errors.
+
+    Bait-and-switch defense: the submission declared one document's hash,
+    but the caller passed bytes that produced a different hash. Failing
+    loud is the audit-correct response.
+    """
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    claimed_hash = "sha256:" + "c" * 64
+    actual_hash = "sha256:" + "d" * 64
+    submission = _submission_with_documentation_artifact(
+        reference="internal://docstore/test.pdf",
+        content_hash=claimed_hash,
+    )
+    doc = _make_document(
+        source_reference="internal://docstore/test.pdf",
+        content_hash=actual_hash,
+    )
+    with pytest.raises(TriageInputError) as excinfo:
+        agent.triage(submission, documents=[doc])
+    msg = str(excinfo.value)
+    assert "content_hash mismatch" in msg
+    assert claimed_hash in msg
+    assert actual_hash in msg
+
+
+def test_triage_accepts_document_when_submission_omits_content_hash() -> None:
+    """A submission entry without a claimed content_hash accepts any Document hash.
+
+    The submission's ``content_hash`` field is optional. When omitted,
+    the agent has nothing to verify against, so any Document hash is
+    accepted. The agent does not impose a hash requirement the contract
+    does not impose.
+    """
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    submission = _submission_with_documentation_artifact(
+        reference="internal://docstore/test.pdf",
+        content_hash=None,  # submission does not declare a hash
+    )
+    doc = _make_document(source_reference="internal://docstore/test.pdf")
+    record = agent.triage(submission, documents=[doc])
+    assert isinstance(record, TriageRecord)
+
+
+def test_triage_accepts_document_when_hash_matches_claim() -> None:
+    """A matching content_hash passes verification cleanly."""
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    matching_hash = "sha256:" + "e" * 64
+    submission = _submission_with_documentation_artifact(
+        reference="internal://docstore/test.pdf",
+        content_hash=matching_hash,
+    )
+    doc = _make_document(
+        source_reference="internal://docstore/test.pdf",
+        content_hash=matching_hash,
+    )
+    record = agent.triage(submission, documents=[doc])
+    assert isinstance(record, TriageRecord)
+
+
+def test_triage_verification_errors_before_llm_call() -> None:
+    """Document verification errors are raised BEFORE the LLM call.
+
+    Cost and audit posture: if a document is wrong, do not pay for an
+    LLM call. Verify identity first, then talk to the model.
+    """
+    called = {"yes": False}
+
+    def _model_should_not_be_called(messages: Any, info: Any) -> ModelResponse:
+        called["yes"] = True
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_model_should_not_be_called)))
+    submission = _submission_with_documentation_artifact(
+        reference="internal://docstore/declared.pdf",
+    )
+    rogue = _make_document(source_reference="internal://docstore/unrelated.pdf")
+    with pytest.raises(TriageInputError):
+        agent.triage(submission, documents=[rogue])
+    assert called["yes"] is False, "agent must reject before calling the LLM"
