@@ -39,7 +39,7 @@ jobs:
           "
 
       - name: Run pytest with coverage
-        run: pytest -v --cov=agent --cov-report=term-missing --cov-fail-under=95
+        run: pytest -v --cov=agent --cov=eval --cov-report=term-missing --cov-fail-under=95
 
       - name: Check for em dashes in markdown
         run: |
