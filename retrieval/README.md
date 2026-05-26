@@ -169,6 +169,72 @@ chunks = retriever.query(query, top_k=5)
 record = agent.triage(submission, regulation_chunks=chunks)
 ```
 
+## Vector and hybrid retrieval (Phase 4 sub-system 5)
+
+The framework supports three retrieval strategies that compose with
+the same `Retriever` wrapper:
+
+### VectorIndex - dense semantic retrieval
+
+`VectorIndex` pre-computes L2-normalized embeddings for every chunk
+and ranks by cosine similarity at query time. It captures semantic
+similarity that BM25 misses: a query for "AI governance" finds
+chunks discussing "AI management systems" even with no shared
+tokens.
+
+```python
+from retrieval import VectorIndex, Retriever, SentenceTransformerEmbedder
+
+embedder = SentenceTransformerEmbedder("all-MiniLM-L6-v2")
+index = VectorIndex(chunks, embedder)
+retriever = Retriever(index)
+```
+
+### HybridIndex - lexical + dense via RRF
+
+`HybridIndex` builds both BM25 and Vector indexes over the same chunks
+and combines per-query rankings via **Reciprocal Rank Fusion** (k=60).
+RRF combines ranks rather than raw scores, so it's robust to the scale
+mismatch between BM25 scores and cosine similarities.
+
+```python
+from retrieval import HybridIndex, Retriever, SentenceTransformerEmbedder
+
+index = HybridIndex(chunks, embedder=SentenceTransformerEmbedder())
+retriever = Retriever(index)
+```
+
+Hybrid is the recommended default for production retrieval. BM25 alone
+captures exact-token matches and regulation-specific acronyms; vector
+alone captures semantic similarity. Hybrid gets both signals.
+
+### Embedder Protocol
+
+`VectorIndex` accepts any class implementing the `Embedder` Protocol.
+The framework ships two implementations:
+
+- **`HashEmbedder`** (no external deps): deterministic hash-based
+  pseudo-embeddings. Does NOT capture semantic similarity. Used in
+  tests and as a fallback when sentence-transformers is not installed.
+- **`SentenceTransformerEmbedder`** (opt-in via `[vector]` extra):
+  production semantic embeddings via the sentence-transformers
+  library. Default model `all-MiniLM-L6-v2` (384-dim, ~80MB).
+
+Adding a Voyage, OpenAI, Cohere, or local-Llama embedder requires only
+implementing the Protocol's `dimension` property and `embed()` method.
+No framework changes.
+
+### Optional installation
+
+The `[vector]` extra installs sentence-transformers:
+
+```
+pip install 'sitkastack-vrt[vector]'
+```
+
+Without the extra, `HashEmbedder` works but semantic retrieval does
+not.
+
 ## Deferred
 
 Tagged for follow-up commits within sub-system 5:
@@ -181,17 +247,15 @@ Tagged for follow-up commits within sub-system 5:
   fetch instructions for the five primary regulations, when
   redistribution terms allow)
 
-Tagged for Phase 4:
+Tagged for Phase 4 follow-up:
 
-- `[deferred-phase-4]` Vector embeddings as a complementary signal
-- `[deferred-phase-4]` Hybrid lexical + vector retrieval with reranker
-- `[deferred-phase-4]` Cross-encoder reranking
-- `[deferred-phase-4]` Query expansion via thesaurus or LLM
-- `[deferred-phase-4]` Citation verification (does the LLM's cited
-  chunk actually support the claim it makes about the chunk)
+- `[deferred-phase-4-followup]` Cross-encoder reranking
+- `[deferred-phase-4-followup]` Query expansion via thesaurus or LLM
 
 Tagged for Phase 5:
 
+- `[deferred-phase-5]` Voyage / OpenAI / Cohere built-in Embedders
+- `[deferred-phase-5]` Persistent vector indexes (FAISS, ChromaDB)
 - `[deferred-phase-5]` Multi-tenant corpora (different deploying orgs
   index different regulation selections; the framework remains
   selection-agnostic)
