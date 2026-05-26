@@ -604,3 +604,220 @@ def test_tier_breakdown_num_bins_validation() -> None:
 
     with pytest.raises(ValueError, match="num_bins"):
         compute_tier_breakdown_calibration([], num_bins=0)
+
+
+# -- equal-frequency binning ----------------------------------------------
+
+
+def test_calibration_report_binning_method_defaults_to_equal_width() -> None:
+    """Backward-compatible default: existing reports show 'equal_width'."""
+    r = compute_calibration([])
+    assert r.binning_method == "equal_width"
+
+
+def test_calibration_report_binning_method_records_chosen_method() -> None:
+    """The binning argument flows through to the report."""
+    r = compute_calibration([], binning="equal_frequency")
+    assert r.binning_method == "equal_frequency"
+
+
+def test_equal_frequency_brier_matches_equal_width() -> None:
+    """Brier is bin-independent; both methods produce the same Brier score."""
+    outcomes = [
+        _outcome(0.61, True),
+        _outcome(0.65, False),
+        _outcome(0.72, False),
+        _outcome(0.78, True),
+        _outcome(0.79, True),
+    ]
+    ew = compute_calibration(outcomes, binning="equal_width")
+    ef = compute_calibration(outcomes, binning="equal_frequency")
+    assert ew.brier_score == pytest.approx(ef.brier_score)
+
+
+def test_equal_frequency_accuracy_matches_equal_width() -> None:
+    """Overall accuracy and mean_confidence are bin-independent."""
+    outcomes = [_outcome(0.3, True), _outcome(0.5, False), _outcome(0.9, True)]
+    ew = compute_calibration(outcomes, binning="equal_width")
+    ef = compute_calibration(outcomes, binning="equal_frequency")
+    assert ew.accuracy == pytest.approx(ef.accuracy)
+    assert ew.mean_confidence == pytest.approx(ef.mean_confidence)
+
+
+def test_equal_frequency_concentrated_distribution_unmasks_miscalibration() -> None:
+    """The motivating use case: concentrated confidence distribution.
+
+    With outcomes all in [0.6, 0.8], equal-width groups them into one
+    bin where mean_confidence ≈ accuracy by construction, hiding
+    miscalibration. Equal-frequency splits them so per-bin gaps surface.
+    """
+    outcomes = [
+        _outcome(0.61, True),
+        _outcome(0.63, True),
+        _outcome(0.65, False),
+        _outcome(0.67, True),
+        _outcome(0.70, True),
+        _outcome(0.72, False),
+        _outcome(0.74, True),
+        _outcome(0.76, False),
+        _outcome(0.78, True),
+        _outcome(0.79, True),
+    ]
+    ew = compute_calibration(outcomes, num_bins=5, binning="equal_width")
+    ef = compute_calibration(outcomes, num_bins=5, binning="equal_frequency")
+    # Equal-width ECE hides the miscalibration; equal-frequency surfaces it
+    assert ef.expected_calibration_error > ew.expected_calibration_error
+
+
+def test_equal_frequency_buckets_have_descriptive_bounds() -> None:
+    """In equal-frequency, bin bounds are min/max within the bucket."""
+    outcomes = [
+        _outcome(0.1, True),
+        _outcome(0.2, True),
+        _outcome(0.3, False),
+        _outcome(0.8, True),
+        _outcome(0.9, False),
+        _outcome(0.95, True),
+    ]
+    r = compute_calibration(outcomes, num_bins=3, binning="equal_frequency")
+    # 6 outcomes / 3 bins = 2 per bin
+    assert r.bins[0].count == 2
+    assert r.bins[0].lower_bound == pytest.approx(0.1)
+    assert r.bins[0].upper_bound == pytest.approx(0.2)
+    assert r.bins[1].count == 2
+    assert r.bins[1].lower_bound == pytest.approx(0.3)
+    assert r.bins[1].upper_bound == pytest.approx(0.8)
+    assert r.bins[2].count == 2
+    assert r.bins[2].lower_bound == pytest.approx(0.9)
+    assert r.bins[2].upper_bound == pytest.approx(0.95)
+
+
+def test_equal_frequency_distributes_remainder() -> None:
+    """When total is not divisible by num_bins, the bin sizes differ by at most one."""
+    # 7 outcomes, 3 bins -> sizes are 7//3=2, 2*7//3-7//3=4-2=2, 7-2-2=3
+    # OR: integer arithmetic gives 0->2, 2->4, 4->7 so sizes 2, 2, 3
+    outcomes = [_outcome(0.1 * (i + 1), i % 2 == 0) for i in range(7)]
+    r = compute_calibration(outcomes, num_bins=3, binning="equal_frequency")
+    counts = [b.count for b in r.bins]
+    # All counts should be within 1 of each other
+    assert max(counts) - min(counts) <= 1
+    assert sum(counts) == 7
+
+
+def test_equal_frequency_fewer_outcomes_than_bins() -> None:
+    """Sparse case: 3 outcomes in 10 bins. Empty bins have bounds (0.0, 0.0)."""
+    outcomes = [_outcome(0.2, True), _outcome(0.5, False), _outcome(0.9, True)]
+    r = compute_calibration(outcomes, num_bins=10, binning="equal_frequency")
+    # All 10 bins still emitted (consistent audit shape)
+    assert len(r.bins) == 10
+    # Three populated bins
+    populated = [b for b in r.bins if b.count > 0]
+    assert len(populated) == 3
+    # Empty bins have bounds (0, 0)
+    empties = [b for b in r.bins if b.count == 0]
+    for b in empties:
+        assert b.lower_bound == 0.0
+        assert b.upper_bound == 0.0
+
+
+def test_equal_frequency_empty_input() -> None:
+    """Empty input falls back to equal-width bounds for the vacuous bins."""
+    r = compute_calibration([], num_bins=5, binning="equal_frequency")
+    assert r.total_predictions == 0
+    assert r.binning_method == "equal_frequency"
+    # Vacuous bins default to equal-width bounds (no data to derive quantiles)
+    assert r.bins[0].lower_bound == 0.0
+    assert r.bins[0].upper_bound == 0.2
+    assert r.bins[4].lower_bound == 0.8
+    assert r.bins[4].upper_bound == 1.0
+
+
+def test_equal_frequency_single_outcome() -> None:
+    """Single outcome: lands in one of the bins."""
+    outcomes = [_outcome(0.5, True)]
+    r = compute_calibration(outcomes, num_bins=3, binning="equal_frequency")
+    populated = [b for b in r.bins if b.count > 0]
+    assert len(populated) == 1
+    assert populated[0].count == 1
+
+
+def test_equal_frequency_ties_stay_together() -> None:
+    """Tied scores at the natural slice boundary stay in adjacent buckets correctly."""
+    # 4 outcomes, all score 0.5; 2 bins
+    outcomes = [_outcome(0.5, True) for _ in range(4)]
+    r = compute_calibration(outcomes, num_bins=2, binning="equal_frequency")
+    # Both bins should have data (2 each)
+    assert r.bins[0].count == 2
+    assert r.bins[1].count == 2
+    # Bounds are descriptive: all 0.5
+    assert r.bins[0].lower_bound == pytest.approx(0.5)
+    assert r.bins[0].upper_bound == pytest.approx(0.5)
+
+
+def test_binning_flows_through_compute_calibration_from_report() -> None:
+    """The binning argument reaches the EvalReport convenience entry."""
+    res = _make_example_result(
+        actual_tier="tier_2_moderate",
+        expected_tier="tier_2_moderate",
+        confidence=0.7,
+    )
+    report = _make_report([res])
+    r = compute_calibration_from_report(report, binning="equal_frequency")
+    assert r.binning_method == "equal_frequency"
+
+
+def test_binning_flows_through_tier_breakdown() -> None:
+    """The binning argument reaches all per-tier reports in the breakdown."""
+    from eval.calibration import compute_tier_breakdown_calibration
+
+    outcomes = [
+        _tiered_outcome(0.6, True,  "tier_1_low"),
+        _tiered_outcome(0.7, False, "tier_1_low"),
+        _tiered_outcome(0.8, True,  "tier_3_elevated"),
+    ]
+    r = compute_tier_breakdown_calibration(outcomes, binning="equal_frequency")
+    assert r.overall.binning_method == "equal_frequency"
+    for rpt in r.by_tier.values():
+        assert rpt.binning_method == "equal_frequency"
+
+
+def test_binning_flows_through_tier_breakdown_from_report() -> None:
+    """And reaches the EvalReport-based tier-breakdown convenience entry."""
+    from eval.calibration import compute_tier_breakdown_calibration_from_report
+
+    res = _make_example_result(
+        actual_tier="tier_3_elevated",
+        expected_tier="tier_3_elevated",
+        confidence=0.65,
+    )
+    report = _make_report([res])
+    r = compute_tier_breakdown_calibration_from_report(report, binning="equal_frequency")
+    assert r.overall.binning_method == "equal_frequency"
+    assert r.by_tier["tier_3_elevated"].binning_method == "equal_frequency"
+
+
+def test_equal_width_remains_default() -> None:
+    """Existing callers not passing binning continue to get equal_width."""
+    r = compute_calibration([_outcome(0.5, True)])
+    assert r.binning_method == "equal_width"
+
+
+def test_invalid_binning_value_rejected_by_literal() -> None:
+    """Pydantic/Literal rejects an unknown binning value at the report layer.
+
+    The Literal type guards the API surface. Calling with a bad string
+    fails at the type level; we exercise the Pydantic-side rejection by
+    constructing a CalibrationReport directly.
+    """
+    with pytest.raises(ValidationError):
+        CalibrationReport(
+            total_predictions=0,
+            dimension="tier",
+            binning_method="not_a_real_method",  # type: ignore[arg-type]
+            accuracy=0.0,
+            mean_confidence=0.0,
+            brier_score=0.0,
+            expected_calibration_error=0.0,
+            maximum_calibration_error=0.0,
+            bins=[],
+        )

@@ -1,5 +1,6 @@
 """Calibration measurement for the vendor risk triage agent."""
 from eval.calibration.scorer import (
+    BinningMethod,
     BinStats,
     CalibrationDimension,
     CalibrationReport,
@@ -14,6 +15,7 @@ from eval.calibration.scorer import (
 
 __all__ = [
     "BinStats",
+    "BinningMethod",
     "CalibrationDimension",
     "CalibrationReport",
     "ConfidenceOutcome",

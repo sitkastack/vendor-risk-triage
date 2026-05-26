@@ -81,17 +81,38 @@ The dimension is recorded on the report for traceability.
 
 ## Binning
 
-Default: 10 equal-width bins over `[0, 1]`. Bin `i` covers
-`[i/N, (i+1)/N)` for all but the final bin, which is inclusive on the
-right end so a score of 1.0 lands in the top bin.
+Two binning methods are supported. The choice is documented on the report's `binning_method` field for audit traceability. Per ADR-017.
 
-Equal-frequency (quantile) binning is `[deferred-phase-4-followup]`.
-Equal-width is more interpretable for audit and matches the standard
-ECE definition.
+### equal_width (default)
 
-`num_bins` is configurable. 10 is the published default in most
-calibration papers; 20 gives finer-grained signal at the cost of
-sparser bins; 5 trades resolution for stability with small datasets.
+10 equal-width bins over `[0, 1]`. Bin `i` covers `[i/N, (i+1)/N)` for all but the final bin, which is inclusive on the right end so a score of 1.0 lands in the top bin. Industry standard ECE definition (Niculescu-Mizil & Caruana 2005, Guo et al. 2017). Bin bounds are prescriptive.
+
+### equal_frequency
+
+Quantile-defined bins where each bin holds approximately the same number of observations. Outcomes are sorted by `confidence_score` ascending and sliced into `num_bins` consecutive buckets using integer arithmetic. Bin bounds are descriptive: `lower_bound` = min confidence in bucket, `upper_bound` = max confidence in bucket.
+
+Use equal-frequency when the agent's confidence distribution is concentrated and equal-width leaves the extreme bins empty. For example, an agent that consistently produces scores in `[0.6, 0.8]` will fill exactly one or two equal-width bins, hiding the per-quintile miscalibration that equal-frequency surfaces.
+
+```python
+from eval.calibration import compute_calibration
+
+# Same outcomes, same Brier, but different ECE depending on binning
+r_ew = compute_calibration(outcomes, binning="equal_width")     # may hide concentrated miscalibration
+r_ef = compute_calibration(outcomes, binning="equal_frequency") # surfaces per-quantile gaps
+
+# Both methods produce identical Brier (bin-independent)
+assert r_ew.brier_score == r_ef.brier_score
+```
+
+Edge cases:
+
+- **Empty input**: vacuous report; bins default to equal-width bounds regardless of method since there is no data to derive quantiles from.
+- **Fewer outcomes than bins**: equal-frequency emits all `num_bins` bins; some have count=0 with bounds `(0.0, 0.0)`. The audit-trail shape (one bin per requested slot) is preserved.
+- **Tied scores**: tied observations stay together in adjacent buckets. Bin bounds collapse to a single value when an entire bucket has identical scores.
+
+`num_bins` is configurable. 10 is the published default in most calibration papers; 20 gives finer-grained signal at the cost of sparser bins; 5 trades resolution for stability with small datasets.
+
+The choice between equal-width and equal-frequency is itself an audit decision. Most institutional deployments should default to equal-width per ADR-017 and run equal-frequency as a sanity check when confidence distributions look concentrated.
 
 ## Usage
 
@@ -200,8 +221,8 @@ Tiers with zero outcomes are omitted from the `by_tier` dict rather than produci
 
 ## Deferred
 
-- `[deferred-phase-4-followup]` Equal-frequency (quantile) binning option
 - `[deferred-phase-4-followup]` Reliability diagram rendering (SVG)
 - `[deferred-phase-5]` Bootstrap confidence intervals on ECE / Brier
 - `[deferred-phase-5]` Calibration drift detection across time windows
 - `[deferred-phase-5]` Per-disposition calibration breakdown (analogous to per-tier)
+- `[deferred-phase-5]` Adaptive binning (data-driven bin count or boundary selection)
