@@ -63,7 +63,7 @@ The library's four boundary crossings:
 **Entry:** Inside the library boundary (eval/judge/LLMJudge).
 **Exit:** Outside the library boundary (a second LLM provider, distinct from the triage agent's provider).
 **Data type:** Judge prompts including the agent's TriageRecord, the original submission, optional documents and chunks, and the Rubric description.
-**Trust assumption:** The library does not trust the judge's response to be schema-conforming; PydanticAI enforces the {score, rationale} shape on the underlying agent. Cross-model judging is recommended (judge model distinct from triage model) but not enforced (per a future ADR-016 in the follow-up commit); deploying institutions decide their judge model policy.
+**Trust assumption:** The library does not trust the judge's response to be schema-conforming; PydanticAI enforces the {score, rationale} shape on the underlying agent. Cross-model judging is recommended (judge model distinct from triage model) but not enforced (per ADR-016); deploying institutions decide their judge model policy.
 **Control:** Schema-enforced response. judge_model_version captured into every JudgeResult for audit traceability. Edge-case short-circuits avoid LLM calls for vacuously-satisfied cases (no chunks cited, non-conditional-approve disposition), preferring deterministic answers when one exists (per ADR-014).
 **Regulatory mapping:**
 - **NIST AI RMF**: Govern function (audit independence). Cross-model judging mitigates self-judging correlation.

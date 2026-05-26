@@ -36,11 +36,15 @@ A new ADR is added when a significant design choice is made. ADRs are not edited
 - ADR-009: Caller-Provided I/O at the Agent Boundary
 - ADR-010: Document Hash Verification Before LLM Invocation
 - ADR-011: BM25 Lexical Retrieval as the Primary Strategy
+- ADR-012: Reciprocal Rank Fusion for Hybrid Retrieval
+- ADR-013: Embedder Protocol for Vendor-Agnostic Semantic Retrieval
 - ADR-014: Deterministic-First Evaluation Discipline
+- ADR-015: Single-Criterion-Per-Call for LLM Judge
+- ADR-016: Cross-Model Judging Recommended Not Enforced
+- ADR-017: Equal-Width Binning for Calibration Reliability
+- ADR-018: Per-Example Error Isolation in Eval Runners
 
 Decisions not yet made, with reasoning, appear in the "Deferred decisions" section at the end of this document.
-
-ADRs 012, 013, 015, 016, 017, and 018 are reserved for the remaining Phase 3/4 decisions that have been made in code but not yet documented in this file. They will land in a follow-up commit.
 
 ---
 
@@ -735,7 +739,7 @@ Implications for audit:
 
 - The first three eval signals are reproducible. Same dataset, same agent, same code = identical metrics. Auditors can replay.
 - The fourth signal is documented non-deterministic. Audit guidance is to run it multiple times for critical examples and report the score distribution.
-- Cross-model judging is recommended (per a future ADR) but not enforced; deploying institutions decide their judge model policy.
+- Cross-model judging is recommended (per ADR-016) but not enforced; deploying institutions decide their judge model policy.
 - The non-deterministic signal's edge-case handlers route to deterministic answers when possible (e.g., MITIGATION_APPROPRIATENESS returns score=1.0 for non-conditional-approve dispositions without calling the LLM). This minimizes LLM-induced variance on cases where the answer is mechanically determined.
 
 ### Consequences
@@ -756,6 +760,303 @@ Implications for audit:
 - **EU AI Act**: Article 15 (accuracy and robustness) and Article 17 (quality management). Reproducible evaluation metrics support both.
 - **OSFI E-23**: Model validation. Deterministic evaluation signals support model validation expectations.
 - **SOX ICFR**: Control effectiveness measurement. Reproducible measurements support the audit trail for control effectiveness.
+
+---
+
+## ADR-012: Reciprocal Rank Fusion for Hybrid Retrieval
+
+**Status:** Accepted
+**Date:** 2026-05-26
+
+### Context
+
+Phase 4 sub-system 5 added vector retrieval (per ADR-013) and hybrid retrieval that combines vector and BM25 (per ADR-011). The hybrid combination step required a method for merging two ranked lists into one.
+
+BM25 scores and cosine similarities live in incomparable numeric ranges. Naive weighted-sum combinations are fragile: small changes in the corpus or the embedder shift the score distributions, and tuned weights stop working. The combination method needs to be robust to score-scale differences.
+
+### Options considered
+
+- **Weighted score combination.** alpha * normalized_bm25 + (1-alpha) * normalized_cosine. Requires score normalization (min-max, z-score, percentile) and a tuned alpha. Both moving parts; both fragile.
+- **Reciprocal Rank Fusion (RRF).** Combine ranks not scores: score(d) = sum over indexes of 1 / (k + rank_in_index(d)). The constant k=60 is the standard value from Cormack, Clarke, and Buettcher (2009). Order-preserving: a document ranked first in both indexes scores highest; one ranked first in one index but absent from the other still scores meaningfully.
+- **Learning-to-rank.** Train a ranker on labeled query-document pairs. Highest-quality option, requires labeled training data the framework does not have.
+
+### Decision
+
+Reciprocal Rank Fusion (RRF) with k=60. The HybridIndex (retrieval/hybrid_index.py) pulls top-fanout (default 50) results from each underlying index, computes RRF over the union of returned chunk_ids, and returns the top-k by RRF score. Documents not appearing in a given index's top-fanout contribute 0 from that index.
+
+The RRF constant k=60 is held to the standard value from Cormack, Clarke, and Buettcher (2009). Configurability is exposed for institutions that want to tune (lower k emphasizes top positions more strongly; higher k de-emphasizes the difference between near-top ranks), but the default is the standard value.
+
+The fanout=50 default balances recall against latency. Larger fanout improves recall at the cost of pulling more results per query; smaller fanout may miss chunks that one index ranks low.
+
+### Consequences
+
+- The hybrid score is not a similarity. RRF scores are bounded by 2 / (k+1) ≈ 0.0328 for top-ranked items; they are useful for ordering but should not be interpreted as probabilities or similarities. Documented in retrieval/README.md.
+- No score normalization required. The two underlying indexes can have wildly different score distributions; RRF is robust.
+- No alpha to tune. Institutions adopting hybrid retrieval get the Cormack-paper standard immediately; tuning is opt-in, not required.
+- Tests exercise the RRF math directly (tests/test_vector_hybrid.py::test_rrf_formula_explicit) to ensure the formula remains correct as the implementation evolves.
+
+### Reconsider when
+
+- Labeled query-document pairs become available and learning-to-rank becomes feasible.
+- A specific deployment context produces consistently poor results with RRF and a tuned weighted-sum performs measurably better.
+
+### Framework coverage
+
+- **NIST AI RMF**: Measure function. Reproducible retrieval-quality measurement is supported by deterministic combination.
+- **EU AI Act**: Article 15 (accuracy and robustness). Robust ranking combination supports robustness.
+- **OSFI E-23**: Model design rationale. Documented combination method supports model governance.
+- **SOX ICFR**: Documented control logic. The retrieval ranking is an input to control output; documented logic supports reproducibility.
+
+---
+
+## ADR-013: Embedder Protocol for Vendor-Agnostic Semantic Retrieval
+
+**Status:** Accepted
+**Date:** 2026-05-26
+
+### Context
+
+Phase 4 sub-system 5 added dense semantic retrieval as a complement to BM25 (per ADR-011). The dense retrieval requires an embedding function that maps text to fixed-dimension vectors. Several providers offer this (sentence-transformers, OpenAI text-embedding, Voyage, Cohere, Anthropic, local models).
+
+Hard-coding any one provider would defeat the framework's vendor-agnostic posture. A pluggable abstraction was required.
+
+### Options considered
+
+- **Hard-code sentence-transformers.** Simplest. Locks the framework to sentence-transformers' update cadence, model availability, and licensing.
+- **Hard-code one cloud provider's embedding API (OpenAI, Voyage).** Simplest cloud path. Locks the framework to one provider and one billing relationship; defeats the vendor-agnostic posture.
+- **Embedder Protocol abstraction.** Define a structural typing protocol (Python's typing.Protocol) that any embedding implementation can satisfy. Ship one or more default implementations.
+
+### Decision
+
+Embedder Protocol abstraction. retrieval/embeddings.py defines the Embedder protocol with two methods: `dimension` (property, returns the fixed output dimension) and `embed(texts: list[str]) -> np.ndarray` (returns L2-normalized vectors, shape (len(texts), dimension)).
+
+Two default implementations ship:
+
+- HashEmbedder: deterministic hash-based pseudo-embeddings. No external dependencies. Tokenizes input, maps tokens to dimension indices via a hash function, L2-normalizes. Does NOT capture semantic similarity (chunks with disjoint vocabularies have near-zero similarity). Used in tests and as a fallback when sentence-transformers is not installed.
+- SentenceTransformerEmbedder: wraps the sentence-transformers library with lazy import. Default model `all-MiniLM-L6-v2` (384-dim, ~80MB). Installed via the opt-in `[vector]` extra.
+
+Adding a provider-backed Embedder (Voyage, OpenAI, Cohere, Anthropic) requires only implementing the Protocol. No framework changes. The Protocol's contract specifies that all embeddings are L2-normalized so cosine similarity in VectorIndex becomes a dot product.
+
+### Consequences
+
+- HashEmbedder makes the dense-retrieval code path testable without external dependencies. Tests run in seconds without downloading models.
+- SentenceTransformerEmbedder is opt-in. Users who do not want vector retrieval do not pay the install cost (model files are 50-500MB depending on the model).
+- Provider-backed Embedders (Voyage, OpenAI, Cohere) are not bundled. The framework ships the Protocol; institutions wire up their preferred provider. The `[deferred-phase-5]` items in retrieval/README.md track the suggestion to ship a small number of provider-backed implementations.
+- L2-normalization is required by the contract. The Protocol's `embed()` docstring states this explicitly. VectorIndex relies on L2-normalization to make cosine similarity a dot product; an implementation that returns non-normalized vectors will produce incorrect rankings.
+
+### Reconsider when
+
+- A specific embedding provider becomes dominant enough that hard-coding it becomes acceptable.
+- The Protocol's contract proves insufficient for advanced embedding patterns (e.g., per-text-pair scoring, query-vs-document asymmetric embedders).
+
+### Framework coverage
+
+- **NIST AI RMF**: Govern function. Vendor-agnostic abstraction at the embedding layer is part of the framework's vendor risk posture.
+- **EU AI Act**: Article 13 (transparency). The Protocol documents what the framework expects of an embedder; deploying organizations know what they are wiring up.
+- **OSFI E-23**: Third-party model oversight. The embedding model is a third-party model in the deployment; the Protocol surfaces the dependency for oversight.
+- **SOX ICFR**: Third-party dependency governance. The framework provides the abstraction; the institution governs its specific embedding choice.
+
+---
+
+## ADR-015: Single-Criterion-Per-Call for LLM Judge
+
+**Status:** Accepted
+**Date:** 2026-05-26
+
+### Context
+
+Phase 4 sub-system 4 ships the LLM-as-judge harness (eval/judge/). The judge grades a TriageRecord against a Rubric (a single evaluation criterion: rationale coherence, citation grounding, mitigation appropriateness, or a custom one).
+
+A design choice exists: should one LLM call evaluate one rubric, or should a single call bundle multiple criteria?
+
+### Options considered
+
+- **Single-criterion-per-call.** Each judge call grades exactly one Rubric. Three rubrics across 100 records = 300 calls.
+- **Multi-criterion bundling.** Each judge call grades multiple Rubrics in one prompt. Three rubrics across 100 records = 100 calls. One-third the cost.
+- **Adaptive bundling.** Bundle when correlated, separate when not. Requires per-rubric correlation analysis.
+
+### Decision
+
+Single-criterion-per-call. Each invocation of LLMJudge.judge() grades exactly one Rubric against one TriageRecord. The LLM produces JSON with exactly two fields: `score` (float in [0, 1]) and `rationale` (string).
+
+Three properties this preserves:
+
+- **Cleaner per-criterion scores.** Bundled grading risks the LLM's score on rubric A being influenced by its score on rubric B (anchoring, ordering effects, criterion bleed). Single-criterion calls isolate the signal.
+- **Easier debugging.** When a rubric's scores look wrong, the prompt is one rubric, not three. Investigation is targeted.
+- **Easier metric attribution.** The aggregate metrics (JudgeAggregateMetrics) report per-rubric mean, min, max, stdev cleanly. Bundling would force per-call scores to be split out, with associated potential for parsing errors.
+
+Multi-criterion bundling is tagged `[deferred-phase-4-followup]` in eval/judge/README.md. Institutions running large evaluation datasets where per-record cost matters more than per-criterion isolation may layer their own bundling logic on top.
+
+### Consequences
+
+- The framework's judge cost is per-rubric-per-record. 3 rubrics × 100 records = 300 LLM calls. Documented explicitly in eval/judge/README.md.
+- Per-rubric scores are isolated; no criterion-bleed concerns.
+- Future bundling is additive: the Rubric model and the LLMJudge.judge() signature do not preclude a bundled-grading variant landing later.
+
+### Reconsider when
+
+- LLM provider pricing makes per-rubric-per-record cost unworkable for typical evaluation dataset sizes.
+- Empirical evidence shows bundling does not affect per-criterion scores meaningfully on the framework's specific rubrics.
+
+### Framework coverage
+
+- **NIST AI RMF**: Measure function. Isolated per-criterion measurement supports reliability of the measurement.
+- **EU AI Act**: Article 17 (quality management). Documented measurement methodology supports the QMS.
+- **OSFI E-23**: Model validation. Per-criterion measurement supports model validation discipline.
+- **SOX ICFR**: Measurement reliability for AI-driven controls.
+
+---
+
+## ADR-016: Cross-Model Judging Recommended Not Enforced
+
+**Status:** Accepted
+**Date:** 2026-05-26
+
+### Context
+
+Phase 4 sub-system 4 ships the LLM-as-judge harness. The judge is itself an LLM, so the framework faces a self-judging question: if the triage agent runs on Claude and the judge also runs on Claude, the judge's evaluation of the agent has correlated errors. The two models share priors; the judge may approve of reasoning patterns the agent generates because both share the same training distribution.
+
+Cross-model judging (triage agent on one model, judge on a different model) mitigates the self-judging correlation. The framework's stance on this needs to be documented: is cross-model judging required, recommended, or just permitted?
+
+This ADR closes a forward reference originally placed in ADR-014, which had mentioned that cross-model judging would be documented in a subsequent ADR. ADR-014 has been updated to reference this ADR-016 directly.
+
+### Options considered
+
+- **Enforce cross-model judging.** The LLMJudge raises if its configured model matches the triage agent's model. Maximum audit-independence; restricts deploying organizations to multi-provider relationships.
+- **Recommend cross-model judging without enforcement.** Documented in eval/judge/README.md as the recommended setup; the LLMJudge does not check. Institutions with single-provider constraints can run same-model judging with the documented caveat.
+- **Silent on the topic.** Leave it to the deploying organization with no framework guidance. Weakest audit story.
+
+### Decision
+
+Recommend cross-model judging without enforcement. eval/judge/README.md documents:
+
+- Cross-model judging is the recommended setup for audit-grade evaluation.
+- Same-model judging is permitted but produces correlated errors; the audit story is weaker. Cheaper mitigation: same model with substantially different system prompt and temperature.
+- The deploying organization's judge model policy is institutional configuration.
+
+The LLMJudge constructor accepts any PydanticAI Model. The judge_model_version is captured into every JudgeResult; auditors can verify the judge model is distinct from the triage model in the audit trail.
+
+The framework does not enforce because:
+
+- Some deploying organizations have single-provider relationships (one LLM contract). Forcing them to add a second provider creates adoption friction without obvious benefit when the deploying organization knows the limitation.
+- The deploying organization's risk posture is its own. The framework provides the guidance; the institution decides.
+- Enforcement would require the framework to know which models "count as different." Cross-vendor (Claude vs GPT) is clearly different; same-vendor different-model (Claude Sonnet vs Claude Opus) is debatable; same-model different-temperature is not different at all. Codifying this judgment in the framework is fragile.
+
+### Consequences
+
+- Audit-grade deployments use cross-model judging. The framework's documented best practice supports the audit story.
+- Single-provider deployments can still run the judge; the trade-off is explicit.
+- judge_model_version metadata supports post-hoc audit verification regardless of policy.
+
+### Reconsider when
+
+- A specific regulator requires cross-model judging for AI-evaluation results in scope (would force enforcement).
+- Cross-vendor judging becomes substantially cheaper such that single-provider deployments are no longer common.
+
+### Framework coverage
+
+- **NIST AI RMF**: Govern function. Independence of judging is part of audit integrity.
+- **EU AI Act**: Article 17 (quality management). Documented evaluation methodology including independence considerations.
+- **OSFI E-23**: Model validation. Independence in model validation is a discipline expectation.
+- **SOX ICFR**: Independent evaluation. Cross-model judging supports independence in control effectiveness measurement.
+
+---
+
+## ADR-017: Equal-Width Binning for Calibration Reliability
+
+**Status:** Accepted
+**Date:** 2026-05-26
+
+### Context
+
+Phase 4 sub-system 3 ships calibration measurement (eval/calibration/). The reliability calculation requires partitioning predicted confidences in [0, 1] into bins and computing per-bin empirical accuracy. The binning choice has consequences for Expected Calibration Error (ECE) and Maximum Calibration Error (MCE) interpretation.
+
+### Options considered
+
+- **Equal-width bins.** Partition [0, 1] into M equal-width intervals (10 intervals of width 0.1 by default). Simple, interpretable; bins with low confidence range can have few or zero observations.
+- **Equal-frequency bins.** Partition observations into M groups of equal sample size (quantile bins). Each bin has roughly the same observation count, improving statistical reliability of per-bin metrics; bin widths vary, making the reliability diagram harder to interpret.
+- **Adaptive binning.** Choose binning per-dataset to optimize some criterion. Defensible for research; less defensible for audit (the binning depends on the data).
+
+### Decision
+
+Equal-width bins with M=10 as the default. eval/calibration/CalibrationScorer.compute_calibration() partitions confidence scores in [0, 1] into 10 intervals of width 0.1. The reliability diagram shows mean confidence vs empirical accuracy per bin.
+
+Three properties this supports:
+
+- **Interpretability.** A reviewer reading the reliability diagram sees fixed bin widths matching natural confidence intervals. "The 0.8-0.9 bin has 85% empirical accuracy" is directly readable.
+- **Stability across datasets.** The same bins apply across datasets and across time. Calibration drift detection (a Phase 5 deliverable) compares apples to apples.
+- **Audit defensibility.** Equal-width is the standard textbook choice (Niculescu-Mizil & Caruana 2005, Guo et al. 2017). Auditors familiar with calibration literature recognize it.
+
+Equal-frequency binning is tagged `[deferred-phase-4-followup]` in eval/calibration/README.md. Institutions with severely imbalanced confidence distributions may want quantile bins; the framework will support it as a flag, not the default.
+
+The bin count M is configurable (the CalibrationScorer constructor accepts a `bin_count` parameter). 10 is the default; 5-15 is the practical range. Below 5 the metric is too coarse; above 15 the per-bin observation count drops.
+
+### Consequences
+
+- ECE and MCE values are interpretable against the standard textbook formulation.
+- Bins at the extremes (0-0.1, 0.9-1.0) may have few observations when the agent rarely produces extreme confidences. Reported in the per-bin observation count alongside metrics so reviewers can identify low-N bins.
+- The framework's calibration story is comparable to other AI evaluation literature.
+
+### Reconsider when
+
+- Empirical evidence shows equal-frequency produces materially better drift detection for the framework's specific confidence distributions.
+- A specific regulator standardizes on a different binning method.
+
+### Framework coverage
+
+- **NIST AI RMF**: Measure function. Standardized calibration measurement supports reliability of the measurement.
+- **EU AI Act**: Article 15 (accuracy). Calibration is part of the accuracy posture.
+- **OSFI E-23**: Model validation. Calibration measurement supports validation expectations.
+- **SOX ICFR**: Measurement reliability. Standardized binning supports reproducibility of calibration claims across audits.
+
+---
+
+## ADR-018: Per-Example Error Isolation in Eval Runners
+
+**Status:** Accepted
+**Date:** 2026-05-26
+
+### Context
+
+The eval harnesses (eval/runner.py for graded examples, eval/attacks/runner.py for prompt-injection attacks) process datasets of N examples. When an exception is raised on example K, the harness must decide whether to abort the entire run or isolate the failure and continue.
+
+This is a small decision but it has consequences for the audit story and for the framework's usability on imperfect datasets.
+
+### Options considered
+
+- **Abort on first error.** One malformed example causes the whole run to fail with that example's exception. Strict but unusable on real-world datasets where one corrupt entry should not invalidate the rest of the evaluation.
+- **Per-example error isolation.** Each example runs in a try/except; an exception on example K is captured as an EvalError record and the run continues. The final report distinguishes successful examples (with metrics) from errored examples (with the exception type and message).
+- **Silent skip.** Errored examples are silently dropped; the report shows N-1 successful examples with no indication that one was dropped. Worst audit story; the run looks complete but is not.
+
+### Decision
+
+Per-example error isolation. eval/runner.py's TriageEvalRunner.run() catches exceptions per example and records them as EvalError instances in the report. The aggregate metrics (TierAccuracy, DispositionAccuracy, JointAccuracy) compute against successful examples only; the error count is reported separately.
+
+Two properties this preserves:
+
+- **Run-level completeness.** A 1000-example dataset with 3 malformed entries produces a report on 997 examples plus a documented 3-example error set. The auditor sees both.
+- **Per-example error visibility.** Errors are not silent. The error record names the example_id, the exception type, and a truncated traceback for debugging. A dataset with widespread errors is visible at a glance.
+
+The attack runner (eval/attacks/runner.py) applies the same pattern: each attack is graded individually; an unexpected exception on attack K is captured as a `harness_error` outcome distinct from the pass/fail outcomes.
+
+### Consequences
+
+- The framework is usable on imperfect datasets. Real-world graded datasets sometimes contain malformed entries; one corrupt row does not invalidate the entire run.
+- The audit story is improved: error events are first-class in the report. An auditor reviewing eval results sees not just metrics but also the data quality of the run.
+- Tests exercise the isolation explicitly (test_runner.py::test_error_isolation_does_not_abort_run) to ensure the pattern remains in place as the runners evolve.
+- A run with mostly errors (a misconfigured dataset, for example) still completes; the metrics are computed over the tiny successful subset and the error count makes the misconfiguration obvious.
+
+### Reconsider when
+
+- Specific deployment context requires fail-fast behavior (a CI pipeline that wants any error to fail the build). The institution can layer their own assertion that error_count == 0 after the run.
+- A specific error pattern indicates a fundamental harness bug rather than a data issue; isolating it just delays diagnosis. Distinguishing harness bugs from data bugs is a Phase 5 concern.
+
+### Framework coverage
+
+- **NIST AI RMF**: Measure function. Robust measurement methodology supports reliability.
+- **EU AI Act**: Article 17 (quality management). Robust evaluation harness supports the QMS.
+- **OSFI E-23**: Model validation. Resilient validation infrastructure supports validation discipline.
+- **SOX ICFR**: Measurement infrastructure. Robust measurement supports reliability of control evaluation.
 
 ---
 
@@ -787,7 +1088,7 @@ If your decision supersedes one of the ADRs in this document, mark the original 
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. Updated May 26, 2026 to add ADR-007 through ADR-011 and ADR-014 documenting Phase 3 and Phase 4 architectural decisions. ADRs 012, 013, 015, 016, 017, and 018 are reserved for the remaining Phase 3/4 decisions documented in code but pending a follow-up commit. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. Updated May 26, 2026 to add ADR-007 through ADR-018 documenting all Phase 3 and Phase 4 architectural decisions. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
 
 ## Author
 
