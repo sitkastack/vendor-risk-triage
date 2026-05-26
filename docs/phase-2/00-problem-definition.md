@@ -94,19 +94,19 @@ Phase 2 is complete when:
 - docs/phase-1/03-output-contract.md: defines what gets produced, which informs the data flow architecture
 - docs/phase-1/04-privacy-and-data-handling.md: informs storage decisions and audit log requirements
 
-**Outputs feeding Phase 3 (Build & Eval):**
+**Outputs feeding Phase 3 (Agent + RAG + Ingestion + Eval, shipped):**
 
-- 04-architecture-decisions.md: constrains implementation choices
-- 03-threat-model.md: defines what gets tested and red-teamed
+- 04-architecture-decisions.md: constrains implementation choices. ADRs 007-014 in particular document the Phase 3 decisions (PydanticAI, stateless library, caller-provided I/O, hash verification, BM25 retrieval, deterministic-first eval).
+- 03-threat-model.md: defines what gets tested. T-AI mitigations point at the actual Phase 3 code paths.
 
-**Outputs feeding Phase 4 (Governance Artifacts):**
+**Outputs feeding Phase 4 (Eval Depth + Retrieval Quality, shipped):**
 
-- 02-trust-boundaries.md: informs what gets documented in model cards and vendor risk artifacts
-- 04-architecture-decisions.md: defines the schema for governance artifact templates
+- 03-threat-model.md: T-AI1, T-AI4, T-AI5, T-AI6, T-AI7, and T-AI8 mitigations are operationalized through the Phase 4 sub-systems (eval/attacks/, eval/citations/, eval/calibration/, eval/judge/, and vector/hybrid retrieval).
+- 04-architecture-decisions.md: ADRs informing Phase 4 design (Embedder Protocol, RRF, cross-model judging, deterministic-first eval).
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published. Roadmap: sitkastack.com/roadmap.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. Updated May 26, 2026 to reflect shipped Phase 3 and Phase 4. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published. Roadmap: sitkastack.com/roadmap.
 
 ## Author
 

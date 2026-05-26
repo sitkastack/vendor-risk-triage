@@ -31,8 +31,16 @@ A new ADR is added when a significant design choice is made. ADRs are not edited
 - ADR-004: Schema Validation via the jsonschema Python Library
 - ADR-005: Storage Architecture on Postgres with Role-Based Append-Only Constraints
 - ADR-006: Schema Evolution and Migration Policy
+- ADR-007: PydanticAI as the Agent Framework
+- ADR-008: Stateless Reference Library Pattern
+- ADR-009: Caller-Provided I/O at the Agent Boundary
+- ADR-010: Document Hash Verification Before LLM Invocation
+- ADR-011: BM25 Lexical Retrieval as the Primary Strategy
+- ADR-014: Deterministic-First Evaluation Discipline
 
 Decisions not yet made, with reasoning, appear in the "Deferred decisions" section at the end of this document.
+
+ADRs 012, 013, 015, 016, 017, and 018 are reserved for the remaining Phase 3/4 decisions that have been made in code but not yet documented in this file. They will land in a follow-up commit.
 
 ---
 
@@ -439,19 +447,335 @@ This decision should be revisited if:
 
 ---
 
+## ADR-007: PydanticAI as the Agent Framework
+
+**Status:** Accepted
+**Date:** 2026-05-25
+
+### Context
+
+ADR-001 commits to a provider-agnostic LLM interface designed LiteLLM-compatible. ADR-001 also notes that the reference Claude adapter's specific mechanism for producing schema-conforming output is decided when the agent build begins. Phase 3 sub-system 2 made that decision: the agent uses PydanticAI as its framework.
+
+The decision had to balance three properties:
+
+- **Provider-agnosticism.** ADR-001 commits to the abstraction. The chosen framework must support multiple providers without requiring rewrites at the call site.
+- **Structured output enforcement.** The output contract (docs/phase-1/03-output-contract.md) is JSON Schema 2020-12 with closure properties. The framework must produce conforming output reliably, not as a best-effort hint to the LLM.
+- **Audit-trail compatibility.** Every record carries agent_version. The framework must be inspectable enough that the version captures both the framework's own behavior and the prompt's behavior.
+
+### Options considered
+
+- **Direct provider SDK (anthropic-sdk-python, openai-python).** Native to each provider, no abstraction layer. ADR-001's provider-agnostic commitment requires the institution to build its own abstraction over the SDKs, or accept lock-in.
+- **LangChain.** Popular abstraction layer. Higher complexity surface, heavier dependency, history of frequent breaking changes. Audit story for the framework's own dependency is weaker.
+- **PydanticAI.** Type-safe agent framework built on Pydantic. Supports multiple providers (Anthropic, OpenAI, Google, Mistral, Cohere, local models). Output is constrained by a Pydantic model the framework enforces, with retry logic when the LLM produces malformed output. Smaller dependency surface than LangChain. Stable interface (1.0 release in 2025).
+
+### Decision
+
+Adopt PydanticAI as the agent framework for the reference implementation. The agent (agent/agent.py) wraps a PydanticAI Agent configured with an internal _TriageClassification output type. The LLM is required to produce JSON conforming to the type; PydanticAI handles retries on malformed output (up to a configurable retry count, default 2).
+
+Provider-agnosticism is preserved: PydanticAI's Model abstraction supports swapping providers without changing the agent code. The reference implementation uses Anthropic Claude by default; deploying organizations select any PydanticAI-supported provider through configuration.
+
+The agent_version field (per ADR-003) captures both the framework's FRAMEWORK_VERSION constant (currently 0.6.0, bumped on material behavior changes) and a SYSTEM_PROMPT_HASH computed at module load from the system prompt text. Any change to the prompt produces a different hash, surfacing the change in the audit trail without manual versioning discipline.
+
+The LiteLLM-compatibility commitment in ADR-001 is preserved as a forward direction. Institutions operationalizing the framework may swap PydanticAI for LiteLLM at the adapter layer if their requirements warrant; the agent code is small enough that the swap is bounded work.
+
+### Consequences
+
+- The reference implementation has a PydanticAI dependency (pydantic-ai-slim[anthropic]>=1.0,<2 in pyproject.toml). The dependency is well-maintained, version-pinned, and tracked in the audit log.
+- Provider swap is configuration, not code, for any provider PydanticAI supports.
+- Structured output is enforced by the framework with retry, not by a separate validator step. The agent module is more compact and the failure modes (UnexpectedModelBehavior after retries) surface explicitly.
+- The deployment-architecture Output Validator described in 01-system-architecture.md is realized by PydanticAI's Pydantic-enforced output, not by a separate JSON Schema validation step. The architecture's intent (validated output before storage) is preserved; the mechanism is different.
+- Tests use PydanticAI's TestModel and FunctionModel to make agent tests deterministic and credential-free.
+
+### Reconsider when
+
+- PydanticAI introduces breaking changes the framework cannot easily absorb.
+- A specific deploying institution requires a provider PydanticAI does not support, and adding the provider upstream is not viable.
+- LiteLLM (or an equivalent) becomes the de facto standard with audit-grade governance, and the reference's vendor risk story benefits more from adoption.
+
+### Framework coverage
+
+- **NIST AI RMF**: Govern function. Framework choice is part of the system's vendor risk posture; documenting it supports accountability.
+- **EU AI Act**: Article 15 (accuracy and robustness). Structured output enforcement supports robustness; framework choice affects how robustly the constraint is enforced.
+- **OSFI E-23**: Model documentation requirements. The framework underlying the model is part of the model's documentation.
+- **SOX ICFR**: Third-party software dependency in the controls environment. PydanticAI is a third-party dependency the institution governs as part of its software supply chain.
+
+---
+
+## ADR-008: Stateless Reference Library Pattern
+
+**Status:** Accepted
+**Date:** 2026-05-25
+
+### Context
+
+01-system-architecture.md (this document's companion in Phase 2) describes a deployment architecture with HTTP REST intake, Postgres-backed storage, an Audit Query API, and a Retention Enforcement job. That architecture is correct as the institutional deployment pattern: it is what a regulated mid-market institution running the gate at production scale ultimately deploys.
+
+The reference implementation in this repository, however, is not the deployment. It is the library that goes inside the deployment. The library is what gets imported into the institution's chosen transport, storage, and operational substrate.
+
+The choice between "reference is the deployment" and "reference is the library" has consequences for adoption, testing, audit, and forks.
+
+### Options considered
+
+- **Reference is the deployment.** The repository ships a runnable HTTP service with Postgres bindings, ready to deploy. Maximum demo value, minimum integration value. Institutions running on different transport (RPC, message bus, batch) or storage (SQLite, DynamoDB, object storage) face significant rework. The reference becomes a competitor to the institution's stack rather than a component of it.
+- **Reference is the library.** The repository ships a Python library that classifies submissions, ingests documents, retrieves regulation context, and evaluates output. The library carries no HTTP, no Postgres, no audit log writer. Institutional code wires the library into the institution's chosen transport and storage. The reference becomes a building block.
+- **Reference is both.** Maintain a library plus a reference deployment that uses it. Highest maintenance burden; risks the deployment diverging from the library as the framework evolves.
+
+### Decision
+
+The reference implementation is the library. The repository ships seven Python packages (agent/, ingestion/, retrieval/, eval/, eval/attacks/, eval/citations/, eval/calibration/, eval/judge/) that perform classification, parsing, retrieval, and evaluation. No HTTP server, no database, no audit log writer. The library is stateless: callers supply submissions, documents, and chunks; the library returns TriageRecords and evaluation results.
+
+The deployment architecture described in 01-system-architecture.md remains the recommended institutional deployment pattern. Institutions wire the library into their chosen transport (HTTP, RPC, message bus), storage (Postgres or equivalent per ADR-005), and operational substrate (audit log, retention, observability). The library does not constrain the wiring; the deployment architecture documents the recommended shape.
+
+A reference deployment using this library is a separate workstream (planned for Phase 5/6) and is intentionally not part of this repository. Keeping deployment separate from library lets the library evolve faster, keeps the dependency footprint smaller, and avoids the reference becoming a competitor to the institution's stack.
+
+### Consequences
+
+- The repository's dependency footprint is small: pydantic, pydantic-ai-slim, pypdf, jsonschema, rank-bm25, optionally sentence-transformers. No web framework, no database client, no observability vendor.
+- Adoption cost for the institution is the wiring work. The library is small enough that wiring is straightforward; the deployment architecture document gives the target shape.
+- Audit log writing, retention enforcement, and the audit query API are institutional concerns. The library does not produce an audit log; it produces TriageRecords that the institution persists and indexes in the institution's chosen audit substrate.
+- The library is testable without HTTP servers or databases. The full test suite (568 tests at FRAMEWORK_VERSION 0.6.0) runs in seconds against in-memory fixtures.
+- Forks of the framework can adopt the library wholesale or selectively (just the agent, just the retrieval layer, just the eval harness) without inheriting deployment commitments.
+- The framework's audit story is cleaner: the library's behavior is fully specified by its types and tests; the deployment's behavior is the institution's responsibility, documented separately.
+
+### Reconsider when
+
+- A specific deploying institution requires a runnable reference deployment to evaluate the framework and the institution does not have the engineering capacity to wire the library themselves.
+- The framework's adoption stalls because the wiring work is consistently the blocker.
+- A specific regulator requires the framework itself to demonstrate end-to-end operational behavior, not just the library.
+
+### Framework coverage
+
+- **NIST AI RMF**: Govern function. The deployment vs library distinction is part of accountability for what the framework does and what the institution does.
+- **EU AI Act**: Article 16 (obligations of providers of high-risk AI systems). The framework provides AI system components; the institution deploying them assembles the system. The distinction matters for provider/deployer obligations.
+- **OSFI E-23**: Third-party model oversight. The library is the third-party component; the deployment is the institution's. The boundary is operational, not just semantic.
+- **SOX ICFR**: IT general controls. Library and deployment have different control responsibilities. The institution's ITGC scope covers the deployment; the library's controls cover the library.
+
+---
+
+## ADR-009: Caller-Provided I/O at the Agent Boundary
+
+**Status:** Accepted
+**Date:** 2026-05-25
+
+### Context
+
+The agent (agent/agent.py) takes three optional inputs in addition to the submission: documents (pre-extracted PDF text), regulation_chunks (retrieved regulation context), and decision_id (caller-supplied for retry chains).
+
+A design choice exists at the agent boundary: does the agent fetch documents and retrieve chunks itself, or does the caller supply them already-fetched?
+
+Self-fetching simplifies the caller's code. Caller-supplied I/O simplifies the agent's code and makes testing dramatically easier.
+
+### Options considered
+
+- **Agent fetches documents and retrieves chunks.** Caller supplies a submission and connection strings or URLs; the agent parses documents from the references and runs retrieval against the configured corpus. Caller code is shorter. Agent has its own I/O surface (network, file system), its own error handling, its own retry logic. Testing requires mocking I/O at multiple levels.
+- **Caller fetches and supplies pre-extracted content.** Caller invokes ingestion/PDFReader and retrieval/Retriever themselves; the agent receives Document and Chunk instances ready to render into the LLM prompt. Caller code is longer but more explicit. Agent has no I/O surface; testing uses in-memory fixtures.
+
+### Decision
+
+Caller-provided I/O. The agent's triage() method takes documents and regulation_chunks as already-constructed lists; the agent does no fetching, no parsing, no retrieval. Callers compose with ingestion/PDFReader (to construct Documents from PDFs) and retrieval/Retriever (to construct Chunks from a queried index) before invoking triage().
+
+Three properties this preserves:
+
+- **No I/O at the agent boundary.** The agent is a pure function over its inputs: same submission + same documents + same chunks + same model = same output. Testability is dramatic; the full agent test suite runs in seconds without network or file system access.
+- **Composability with alternative providers.** A caller wanting to swap pypdf for a different parser, BM25 for a different retrieval strategy, or the local file system for an object store does so without touching the agent. The Embedder Protocol (per Phase 4 sub-system 5) is the same pattern at the embedding layer.
+- **Audit clarity.** What the agent saw is exactly what the caller passed. There is no hidden I/O the auditor has to reconstruct.
+
+### Consequences
+
+- The caller is responsible for wiring document parsing and retrieval. The ingestion/ and retrieval/ packages make this small (a few lines for each), but it is real wiring.
+- The agent cannot fail because of I/O errors; those failures surface earlier, at the caller's parsing or retrieval step. Better error localization for the institution's logs.
+- The bait-and-switch defense (per ADR-010) is enforced at the agent boundary: the agent verifies a supplied Document's content_hash against the submission's claim before any LLM call. If the agent fetched documents, the defense would have to live in the fetch path; pushing it to the boundary makes the verification explicit and unavoidable.
+- Tests construct Document and Chunk fixtures in-memory. No PDFs are read during the test suite; no network is touched.
+- Wrapping the library in a thin HTTP service is the institution's task. The wrapper handles the fetch-and-supply pattern; the library does the work.
+
+### Reconsider when
+
+- A specific deploying institution requires a self-fetching agent because their wrapper layer is constrained.
+- The library's adoption stalls because the I/O wiring is consistently the blocker (in which case ADR-008's reconsider conditions also apply).
+
+### Framework coverage
+
+- **NIST AI RMF**: Govern function (transparency about what the agent does and does not do).
+- **EU AI Act**: Article 13 (transparency and provision of information to deployers). The agent's I/O boundary is a transparency property; documenting it supports the article's requirements.
+- **OSFI E-23**: Model governance (model boundaries explicit, not implicit).
+- **SOX ICFR**: Control reliability (the agent's behavior is fully determined by its inputs, which is auditable).
+
+---
+
+## ADR-010: Document Hash Verification Before LLM Invocation
+
+**Status:** Accepted
+**Date:** 2026-05-25
+
+### Context
+
+Documentation artifacts in the input contract (per docs/phase-1/02-input-contract.md) can carry an optional content_hash field naming the SHA-256 of the document the submitter claims to have attached. The hash is part of the submission identity for idempotency purposes (per 01-system-architecture.md).
+
+T-AI4 in the threat model identifies hallucination as a residual risk. A related but distinct threat is bait-and-switch: a submitter claims one document via content_hash, but the actual document parsed at inference time is different. The discrepancy is invisible to the LLM, which sees only the parsed text. The result is a triage record that purports to be based on the claimed document but is actually based on attacker-substituted content.
+
+### Options considered
+
+- **Trust the submitter's claimed hash.** Skip verification. Simplest, but defeats the integrity purpose of the hash field.
+- **Verify on read at audit time.** Persist the hash with the record; verify when the auditor queries. Pushes detection to audit rather than prevention at decision time.
+- **Verify at the agent boundary, before any LLM call.** Compute the actual document's hash, compare against the submission's claim, raise if they differ. Cost is one SHA-256 per document.
+
+### Decision
+
+Verify at the agent boundary before any LLM call. The agent's triage() method, when documents are supplied, calls _verify_documents_against_submission() which compares each Document's computed content_hash against the matching entry in the submission's documentation_artifacts. A mismatch raises TriageInputError, surfacing the integrity failure before any classification work begins.
+
+The verification covers two failure modes:
+- Source reference matches, but content_hash differs: bait-and-switch. Reject.
+- Source reference matches no submission entry: phantom document. Reject.
+
+The error includes specific reference paths for the auditor to investigate.
+
+### Consequences
+
+- One SHA-256 computation per supplied document at the agent boundary. The cost is negligible compared to the LLM call.
+- Bait-and-switch attacks are caught before the LLM is invoked, not after. The audit trail shows the rejection event with specific references; the LLM cost is zero for the attack.
+- The agent's caller is responsible for actually computing the content_hash on the Document instance it constructs. The ingestion/ package's PDFReader does this automatically; callers using a different parser must compute the hash themselves.
+- The defense applies only when the submission carries content_hash claims. Submissions omitting content_hash bypass the verification; this is consistent with the input contract's optional treatment of content_hash and the 01-system-architecture.md note about best-effort idempotency in the absence of claims.
+- The verification is tested explicitly in tests/test_agent_core.py with both passing (matching hashes) and failing (mismatched hashes) cases. Phase 4 sub-system 1's attack dataset includes an "attack-bait-switch-1" entry with expected_to_raise=TriageInputError that exercises the defense in the eval harness.
+
+### Reconsider when
+
+- The submitter cannot reasonably compute content_hash for their submission (e.g., document is fetched at submission time and the hash is computed downstream). In that case, content_hash should be omitted rather than fabricated.
+- A specific provider or transport introduces hash mutation between submission and agent invocation (e.g., document re-encoding by a proxy). The verification logic accommodates this by accepting hash absence; mutations should not silently change a claimed hash.
+
+### Framework coverage
+
+- **NIST AI RMF**: Manage function (integrity controls on inputs to the AI system).
+- **EU AI Act**: Article 15 (accuracy and robustness). Input integrity is a robustness property.
+- **OSFI E-23**: Model input governance. Verified input integrity supports model accountability for the inputs used in classification.
+- **SOX ICFR**: Control input integrity. When AI supports financial reporting, inputs to the AI are inputs to a control; verified integrity is required.
+
+---
+
+## ADR-011: BM25 Lexical Retrieval as the Primary Strategy
+
+**Status:** Accepted
+**Date:** 2026-05-25
+
+### Context
+
+Phase 3 sub-system 5 added regulation context retrieval. The agent's triage() method accepts regulation_chunks as an optional input; the chunks are retrieved by the caller from a regulation corpus (OSFI E-23, ISO 42001, NIST AI RMF, EU AI Act, SOX/ICFR) and supplied to the agent.
+
+The retrieval strategy choice has consequences for vendor risk posture, audit defensibility, determinism, and operational footprint.
+
+### Options considered
+
+- **Vector embeddings as the primary retrieval.** Dense semantic retrieval via a learned embedding model. Captures semantic similarity well; misses exact-phrase and acronym matches. Requires an embedding model dependency (sentence-transformers, OpenAI text-embedding, Voyage, Cohere). Non-deterministic across model updates: re-embedding the same chunk after a model version bump produces a different vector.
+- **BM25 lexical retrieval as the primary strategy.** Token-overlap-based ranking via rank-bm25 (pure Python, no model dependency). Captures exact-phrase and regulation-specific acronyms (CC6.1, E-23, Annex III). Deterministic: same corpus + same query = same ranking, indefinitely. Auditor can inspect tokenization and ranking logic.
+- **Hybrid lexical + vector from the start.** Both signals combined. Stronger retrieval, but commits to the vector dependency at the primary level. Audit story is more complex.
+
+### Decision
+
+BM25 lexical retrieval is the primary strategy. Phase 3 sub-system 5 ships BM25Index, Retriever, and CorpusLoader; these are the framework's documented retrieval surface. Vector and hybrid retrieval ship in Phase 4 sub-system 5 as complementary signals available via opt-in.
+
+Three properties drive the primary choice:
+
+- **Vendor-agnostic.** rank-bm25 is pure Python with one dependency (numpy). No model file, no model provider, no inference cost. The institution's vendor risk posture for retrieval is minimal.
+- **Deterministic.** Same corpus, same query, same ranking. Indefinitely. Regulation chunks an agent cited in a decision today rank identically when re-queried in a 5-year audit review, assuming the corpus has not changed.
+- **Auditable.** The tokenizer is a 4-line regex (a single function in retrieval/index.py). The BM25 formula is documented. A reviewer can predict which chunks rank for a given query without running the system.
+
+Vector retrieval addresses BM25's gaps (semantic similarity, vocabulary mismatch) as a Phase 4 addition (per Phase 4 sub-system 5 in retrieval/vector_index.py and retrieval/hybrid_index.py). The Embedder Protocol is vendor-agnostic at the embedding layer; HashEmbedder ships as the no-dependency default, SentenceTransformerEmbedder ships as the opt-in [vector] extra. Institutional deployments may select any Embedder Protocol implementation, including provider-backed ones (Voyage, OpenAI, Cohere). The hybrid index combines BM25 and vector rankings via Reciprocal Rank Fusion (k=60).
+
+### Consequences
+
+- The framework's default retrieval has minimal vendor risk and small dependency footprint.
+- BM25's gaps are real: a query for "AI governance" does not match a chunk discussing "AI management systems" by token overlap. Hybrid retrieval addresses this when the deploying institution installs the [vector] extra.
+- BM25's IDF math degenerates on very small corpora (N<3 documents). Documented in retrieval/README.md. Real regulation corpora are well into the hundreds of chunks where IDF is well-behaved.
+- The deterministic property is foundational to the audit story. Citation grounding (per Phase 4 sub-system 2) checks chunk_id references against the supplied chunk list; deterministic retrieval means the same chunks reach the agent and the verifier.
+- Adding a different lexical retrieval (e.g., SPLADE) is a future option; the Retriever abstracts the index type. The framework's commitment is to a primary deterministic, vendor-agnostic strategy, not specifically to BM25 forever.
+
+### Reconsider when
+
+- Hybrid retrieval becomes the default for a majority of deploying institutions, and the dependency on sentence-transformers (or equivalent) becomes acceptable as a baseline.
+- A specific regulator requires semantic retrieval as the primary strategy for AI risk classification.
+- BM25's gaps on specific corpora become consistently problematic.
+
+### Framework coverage
+
+- **NIST AI RMF**: Govern function (vendor risk for retrieval components). The default minimizes vendor risk.
+- **EU AI Act**: Article 12 (record-keeping). Deterministic retrieval supports the reconstructability of decisions over time.
+- **OSFI E-23**: Model governance. Deterministic retrieval supports the model's auditability and reproducibility expectations.
+- **SOX ICFR**: Reproducibility of control outputs. Deterministic retrieval supports reproducibility of AI-driven decisions in the ICFR scope.
+
+---
+
+## ADR-014: Deterministic-First Evaluation Discipline
+
+**Status:** Accepted
+**Date:** 2026-05-25
+
+### Context
+
+Phase 4 added evaluation depth beyond the tier-and-disposition accuracy measured in Phase 3 (eval/runner.py). The new sub-systems address questions that go beyond label match:
+
+- Does the agent resist prompt injection? (Phase 4 sub-system 1, eval/attacks/)
+- Do citations in the agent's reasoning actually resolve? (Phase 4 sub-system 2, eval/citations/)
+- Is the agent's confidence calibrated? (Phase 4 sub-system 3, eval/calibration/)
+- Does the agent's reasoning hold up to semantic review? (Phase 4 sub-system 4, eval/judge/)
+
+Two of these (citations, calibration) admit deterministic answers via reference resolution and arithmetic. One (attacks) admits a deterministic answer via assertion grading. One (judge) requires an LLM to grade semantic quality.
+
+The order in which the framework adopts these signals matters. Adopting an LLM-based signal first introduces non-determinism into the eval story; adopting deterministic signals first establishes a stable baseline that the LLM signal complements rather than replaces.
+
+### Options considered
+
+- **LLM-as-judge first.** Highest semantic depth, addresses the auditor's hardest questions. Non-deterministic: same record judged twice produces different scores. The framework's eval story becomes "LLM grades LLM"; the audit story is harder.
+- **Deterministic-first, then LLM-as-judge as complement.** Citation verification, calibration, and attack-resistance establish deterministic baselines. LLM-as-judge adds the semantic dimension as a documented non-deterministic signal layered on top.
+- **All four signals at once.** No prioritization. Higher risk that one signal's non-determinism contaminates the audit story for the others.
+
+### Decision
+
+Deterministic signals first, LLM-as-judge as complement. Phase 4 sub-system 1 (attacks) ships a deterministic assertion-grading harness (the agent's response either falls in the assertion's allowed range or it does not; no LLM grades). Phase 4 sub-system 2 (citations) ships fully-deterministic verification with JSONPath-lite path resolution and Jaccard token-overlap grounding. Phase 4 sub-system 3 (calibration) ships fully-deterministic Brier, ECE, and MCE arithmetic. Phase 4 sub-system 4 (LLM-as-judge) ships as the explicit non-deterministic complement, with three pre-built rubrics, audit-trail metadata (judge_model_version, run_timestamp), and edge-case short-circuits that prefer the deterministic answer when one exists.
+
+Implications for audit:
+
+- The first three eval signals are reproducible. Same dataset, same agent, same code = identical metrics. Auditors can replay.
+- The fourth signal is documented non-deterministic. Audit guidance is to run it multiple times for critical examples and report the score distribution.
+- Cross-model judging is recommended (per a future ADR) but not enforced; deploying institutions decide their judge model policy.
+- The non-deterministic signal's edge-case handlers route to deterministic answers when possible (e.g., MITIGATION_APPROPRIATENESS returns score=1.0 for non-conditional-approve dispositions without calling the LLM). This minimizes LLM-induced variance on cases where the answer is mechanically determined.
+
+### Consequences
+
+- The framework's eval story has a stable deterministic core. An auditor reviewing Phase 4 sub-system 1 through 3 results gets reproducible metrics; the Phase 4 sub-system 4 results are explicitly framed as a non-deterministic complement.
+- The cost ordering aligns: deterministic checks are essentially free, LLM-as-judge has per-call cost. Running citations and calibration over an entire dataset is cheap; running LLM-as-judge requires budget.
+- The audit cycle benefits: the deterministic signals are run on every commit (in CI); the LLM signal is run on dataset milestones or on demand.
+- The framework's stance on non-determinism is consistent across components: it is acknowledged where it exists (the triage agent itself is non-deterministic, the judge is non-deterministic) and surfaced via audit-trail metadata, not hidden.
+
+### Reconsider when
+
+- A deployment context exists where deterministic-first ordering is not appropriate (e.g., a research environment where the LLM-grader produces ground-truth labels).
+- Confidence intervals on LLM-grader scores become reliable enough that the non-deterministic signal can be treated as if deterministic (with documented confidence bounds). This is roughly a Phase 5 question.
+
+### Framework coverage
+
+- **NIST AI RMF**: Measure function (consistent measurement methodology). Deterministic-first measurement is more consistently applicable than non-deterministic-first.
+- **EU AI Act**: Article 15 (accuracy and robustness) and Article 17 (quality management). Reproducible evaluation metrics support both.
+- **OSFI E-23**: Model validation. Deterministic evaluation signals support model validation expectations.
+- **SOX ICFR**: Control effectiveness measurement. Reproducible measurements support the audit trail for control effectiveness.
+
+---
+
 ## Deferred decisions
 
 The following decisions are real architectural questions the Vendor Risk Triage gate will eventually need to answer. They are deferred because the answer depends on work that has not yet happened, or because the decision is intentionally left to the deploying institution.
 
-**Output validation mechanism (tool use vs JSON mode vs constrained generation).** ADR-001 commits to a provider-agnostic interface; each provider adapter chooses its own mechanism for producing output that conforms to docs/phase-1/03-output-contract.md. The reference Claude adapter's specific mechanism is decided when the agent build begins in Phase 3.
+**Output validation mechanism (resolved by ADR-007).** Originally listed as deferred to Phase 3. Phase 3 sub-system 2 adopted PydanticAI, which enforces structured output via the Pydantic-typed _TriageClassification output model. The mechanism is documented in ADR-007.
 
-**Confidence score calibration and HITL routing thresholds.** Phase 1 specifies that confidence calibration is a Phase 3 (Build & Eval) concern. Specific HITL routing thresholds depend on calibrated confidence scores against a representative evaluation set. Both are deferred to Phase 3.
+**Confidence score calibration (partially resolved by Phase 4 sub-system 3).** Phase 4 sub-system 3 (eval/calibration/) ships the calibration measurement: Brier, ECE, MCE, reliability bins, and three correctness dimensions (tier, disposition, both). The mechanism is in place. HITL routing thresholds remain institutional configuration; the framework provides the calibration data, deploying organizations select thresholds appropriate to their risk posture.
 
-**Incidental PII detection mechanism.** The privacy spec (docs/phase-1/04-privacy-and-data-handling.md) names the available approaches (pattern matching, NER, LLM-based classification, commercial DLP, hybrid) and requires specific behaviors (detection at intake, every failure logged, redaction or rejection). The mechanism is the institution's choice.
+**Incidental PII detection mechanism.** The privacy spec (docs/phase-1/04-privacy-and-data-handling.md) names the available approaches (pattern matching, NER, LLM-based classification, commercial DLP, hybrid) and requires specific behaviors (detection at intake, every failure logged, redaction or rejection). The mechanism remains the institution's choice. The reference library does not include PII detection; the institution's deployment wires PII detection into the intake transport before invoking the library.
 
-**Specific retention period for the reference deployment.** The privacy spec requires retention to be explicit but leaves the period to the deploying institution. The reference deployment's specific number is set when the reference institution publishes its retention policy alongside the running system.
+**Specific retention period for the reference deployment.** The privacy spec requires retention to be explicit but leaves the period to the deploying institution. Per ADR-008, the reference library does not persist records; retention is the institution's storage layer's concern.
 
-**Cross-region and multi-adapter failover.** The architecture does not include failover at the reference level. Institutional extensions may add it.
+**Cross-region and multi-adapter failover.** The architecture does not include failover at the reference level. Institutional extensions may add it. PydanticAI's Model abstraction (per ADR-007) supports the swap.
+
+**Audit-log shipping format.** Originally implied in Phase 4's "Governance Artifacts" framing; deferred to Phase 5 (Operational Hardening). The library produces TriageRecords conforming to the output contract; the audit-log shipping format describes how a collection of records, dataset hashes, eval reports, and corpus content_hashes are bundled for regulator handoff.
+
+**Multi-tenant corpora.** Different deploying organizations index different regulation selections. Deferred to Phase 5. The framework's Embedder Protocol and Retriever abstraction support multi-tenant patterns; the bundling and access-control layer is Phase 5 work.
 
 ---
 
@@ -463,7 +787,7 @@ If your decision supersedes one of the ADRs in this document, mark the original 
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. Updated May 26, 2026 to add ADR-007 through ADR-011 and ADR-014 documenting Phase 3 and Phase 4 architectural decisions. ADRs 012, 013, 015, 016, 017, and 018 are reserved for the remaining Phase 3/4 decisions documented in code but pending a follow-up commit. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
 
 ## Author
 
