@@ -4,9 +4,78 @@ Explicit documentation of what is inside the Vendor Risk Triage gate's trust bou
 
 ## Reading this
 
-This document builds on docs/phase-2/01-system-architecture.md, which decomposes the gate into its components. Where 01 specifies what each component does, this document specifies the trust assumptions for each component and the controls at each boundary crossing.
+This document specifies two trust boundary surfaces that compose:
+
+The **reference library trust boundaries** are the boundaries the Python library this repo ships actually exposes: caller-to-library, library-to-LLM-provider, library-to-file-system, and (optionally) library-to-second-LLM-provider for cross-model judging. These are the boundaries an auditor reviewing the library's behavior asks about.
+
+The **deployment trust boundaries** are the broader institutional surface the library is consumed by: the HTTP transport, the audit query API, the Postgres host, the optional PII detection service. These are documented in the existing sections below and represent the institutional shape the library is wired into.
+
+Both compose: the library's boundaries are inside the deployment's boundaries. A deploying institution operating the library inside its deployment architecture inherits both surfaces.
+
+This document builds on docs/phase-2/01-system-architecture.md, which describes both the reference library and the deployment architecture.
 
 Forks of the framework adapt the boundary placement and the crossing controls to their regulatory context. The patterns documented here are intended as a defensible reference, not a prescriptive standard.
+
+## Reference library trust boundaries
+
+The reference library (per 01-system-architecture.md and ADR-008) is a stateless Python library. Its trust boundary is drawn around the library's code; the caller (institutional code wiring the library into a transport and storage layer), the LLM provider, the local file system, and any second LLM provider used for cross-model judging are explicitly outside the boundary.
+
+The library's four boundary crossings:
+
+### Library Crossing A: Caller to library
+
+**Entry:** Outside the library boundary (caller code).
+**Exit:** Inside the library boundary (agent/, ingestion/, retrieval/, eval/ packages).
+**Data type:** Submissions (dict), pre-extracted Documents, retrieved Chunks, datasets for evaluation.
+**Trust assumption:** The library does not trust caller-supplied inputs to be well-formed. Pydantic validation at the agent boundary enforces submission shape; agent/agent.py verifies document content_hash against the submission's claim before any LLM call (per ADR-010); the eval packages validate dataset entries at load time.
+**Control:** Pydantic-typed boundaries on every public API entry point. PydanticAI's structured output enforcement on the agent's response (per ADR-007). TriageInputError raised explicitly on hash mismatch or phantom documents (per ADR-010). Eval dataset loaders raise on malformed entries with specific line numbers.
+**Regulatory mapping:**
+- **NIST AI RMF**: Govern function. The library's input boundary is part of accountability for the AI system's behavior.
+- **EU AI Act**: Article 13 (transparency and provision of information to deployers). The library boundary is a transparency property; the caller knows what the library checks and what it does not.
+- **OSFI E-23**: Model input governance. Validated input integrity supports model accountability.
+- **SOX ICFR**: Control input validation. When AI supports financial reporting, library input validation is a control.
+
+### Library Crossing B: Library to LLM Provider
+
+**Entry:** Inside the library boundary (agent/agent.py via PydanticAI).
+**Exit:** Outside the library boundary (the LLM provider).
+**Data type:** Constructed prompts including submission content, document text, and regulation chunks; structured response tokens.
+**Trust assumption:** The library does not trust the LLM provider's response to be schema-conforming on its own; PydanticAI enforces the TriageRecord shape via output_type and retries on malformed responses (per ADR-007). The library trusts the provider's transport-layer security (TLS) as documented in the deployment architecture.
+**Control:** PydanticAI's structured output enforcement (per ADR-007). Retry logic on malformed output. Provider model selection via configuration (PydanticAI Model abstraction supports Anthropic, OpenAI, Google, Mistral, Cohere, local). FRAMEWORK_VERSION and SYSTEM_PROMPT_HASH captured into agent_version on every record so a future audit can identify the exact library+prompt that produced each record (per ADR-007).
+**Regulatory mapping:**
+- Same as deployment Crossing 2 below; the library inherits the deployment's third-party AI crossing controls. The library-level boundary adds: structured output enforcement is part of the robustness posture independent of transport-layer controls.
+
+### Library Crossing C: Library to file system
+
+**Entry:** Inside the library boundary (ingestion/PDFReader, retrieval/CorpusLoader).
+**Exit:** Outside the library boundary (the local file system).
+**Data type:** PDF documents read for parsing, regulation corpus chunks read for indexing.
+**Trust assumption:** The library trusts the caller to supply readable paths. The library does not trust file content to be well-formed PDF or valid chunk data; pypdf errors and JSONL parse failures surface as explicit exceptions with file paths and line numbers.
+**Control:** Explicit file path arguments (no path traversal from caller-supplied submission content). Content hash computation on every parsed Document for bait-and-switch defense (per ADR-010). The library does not retain file handles or write to disk; reads are bounded and explicit.
+**Regulatory mapping:**
+- **NIST AI RMF**: Manage function. File system access patterns are part of operational risk management.
+- **EU AI Act**: Article 12 (record-keeping). Source document integrity supports the record's reconstructability.
+- **OSFI E-23**: Model input governance. Document hash verification supports input integrity.
+- **SOX ICFR**: Source document integrity. Verified document hashes support the audit trail for AI-derived control outputs.
+
+### Library Crossing D: LLM-judge to second LLM Provider (optional)
+
+**Entry:** Inside the library boundary (eval/judge/LLMJudge).
+**Exit:** Outside the library boundary (a second LLM provider, distinct from the triage agent's provider).
+**Data type:** Judge prompts including the agent's TriageRecord, the original submission, optional documents and chunks, and the Rubric description.
+**Trust assumption:** The library does not trust the judge's response to be schema-conforming; PydanticAI enforces the {score, rationale} shape on the underlying agent. Cross-model judging is recommended (judge model distinct from triage model) but not enforced (per a future ADR-016 in the follow-up commit); deploying institutions decide their judge model policy.
+**Control:** Schema-enforced response. judge_model_version captured into every JudgeResult for audit traceability. Edge-case short-circuits avoid LLM calls for vacuously-satisfied cases (no chunks cited, non-conditional-approve disposition), preferring deterministic answers when one exists (per ADR-014).
+**Regulatory mapping:**
+- **NIST AI RMF**: Govern function (audit independence). Cross-model judging mitigates self-judging correlation.
+- **EU AI Act**: Article 15 (accuracy and robustness). LLM-as-judge is a robustness evaluation method.
+- **OSFI E-23**: Model validation. Independent model judging supports validation expectations.
+- **SOX ICFR**: Independent evaluation. Cross-model judging supports independence in control effectiveness measurement.
+
+This crossing exists only when the deploying organization uses the eval/judge/ package. Organizations using only the deterministic eval signals (eval/runner.py, eval/attacks/, eval/citations/, eval/calibration/) do not have this crossing.
+
+## Deployment trust boundaries
+
+The sections below describe the deployment-architecture trust boundaries the reference library is consumed by. These are the institutional surface a deploying organization wires up around the library. Per ADR-008, the library does not provide HTTP, Postgres, audit query, retention enforcement, or PII detection directly; the deployment architecture handles those.
 
 ## Trust boundary overview
 
@@ -211,7 +280,7 @@ This document is built on by:
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. Updated May 26, 2026 to add the "Reference library trust boundaries" section reflecting the four boundary crossings the Python library exposes (caller-to-library, library-to-LLM-provider, library-to-file-system, optional library-to-second-LLM-provider for cross-model judging). The deployment trust boundaries below remain the institutional shape the library is consumed by. All five Phase 2 artifacts are published.
 
 ## Author
 

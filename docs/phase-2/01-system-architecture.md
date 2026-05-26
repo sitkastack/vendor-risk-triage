@@ -4,9 +4,90 @@ Component-level decomposition of the Vendor Risk Triage gate. This document spec
 
 ## Reading this
 
-This document is the visual anchor for Phase 2. The system architecture defined here is referenced by docs/phase-2/02-trust-boundaries.md (which identifies what is inside the trust boundary and what is outside) and docs/phase-2/03-threat-model.md (which maps threats against the components named here).
+This document specifies two architectures that compose:
 
-Forks of the framework adapt the component set, the data flow, and the deployment specifics to their regulatory context. The architectural patterns documented here are intended as a defensible reference, not a prescriptive standard.
+The **reference library** is what this repository ships: a stateless Python library of seven packages that performs classification, document parsing, regulation retrieval, and evaluation. The library is described in the "Reference library implementation" section below.
+
+The **deployment architecture** is the institutional shape the reference library is consumed by: an HTTP transport, Postgres-backed storage, an audit query API, retention enforcement, and the trust boundary controls that bind them. The deployment architecture is described in the "Deployment architecture" sections that follow.
+
+The two compose: a deploying institution wires the library into the deployment architecture. The library carries no HTTP, no Postgres, no audit log writer; the deployment architecture handles those. ADR-008 records this decision.
+
+Forks of the framework adapt both. The library can be adopted wholesale or selectively (just the agent, just the retrieval layer, just the eval harness). The deployment architecture is a defensible reference institutional shape, not a prescriptive standard.
+
+## Reference library implementation
+
+The repository ships seven Python packages. Each is documented in its own README inside the package.
+
+```mermaid
+flowchart TB
+    Caller([Institutional code<br/>HTTP handler, batch job, etc.])
+
+    subgraph Library[Reference library this repo ships]
+        direction TB
+        Agent[agent/<br/>PydanticAI triage agent<br/>per ADR-007]
+        Ingestion[ingestion/<br/>PDF parsing + hash verification<br/>per ADR-010]
+
+        subgraph RetrievalPkg[retrieval/]
+            BM25[BM25Index<br/>lexical, primary per ADR-011]
+            Vector[VectorIndex<br/>dense, Phase 4 sub-system 5]
+            Hybrid[HybridIndex<br/>BM25 + Vector via RRF]
+        end
+
+        subgraph EvalPkg[eval/]
+            Runner[runner.py<br/>graded eval harness]
+            Attacks[eval/attacks/<br/>prompt-injection suite]
+            Citations[eval/citations/<br/>deterministic verification]
+            Calibration[eval/calibration/<br/>Brier / ECE / MCE]
+            Judge[eval/judge/<br/>LLM-as-judge]
+        end
+    end
+
+    LLMProvider[(LLM Provider<br/>Claude by default, swap via<br/>PydanticAI Model abstraction)]
+    Corpus[(Regulation corpus<br/>institution-provisioned<br/>per Phase 5 multi-tenant work)]
+    Docs[(Vendor documents<br/>caller-fetched)]
+
+    Caller -->|submission + documents + chunks<br/>per ADR-009| Agent
+    Caller -->|"reads bytes, hands to PDFReader"| Ingestion
+    Ingestion -.->|Documents with content_hash| Caller
+    Caller -->|builds index from corpus chunks| BM25
+    Caller -->|"query, top_k"| RetrievalPkg
+    RetrievalPkg -.->|Chunks ranked| Caller
+    Docs --> Ingestion
+    Corpus --> BM25
+    Agent <-->|"PydanticAI Model call"| LLMProvider
+    Agent -.->|TriageRecord| Caller
+    Caller -->|TriageRecord + dataset| EvalPkg
+    EvalPkg <-.->|"optional: judge model call"| LLMProvider
+    EvalPkg -.->|eval metrics| Caller
+```
+
+**agent/** is a PydanticAI-based triage agent that produces a TriageRecord from a submission, optional pre-extracted documents, and optional retrieved regulation chunks (per ADR-007, ADR-009). The agent renders submission content into the LLM prompt inside explicit BEGIN_SUBMISSION/END_SUBMISSION delimiters, document content inside BEGIN_DOCUMENT/END_DOCUMENT, and regulation context inside BEGIN_REGULATION_CONTEXT/END_REGULATION_CONTEXT, each with system prompt instructions to treat the content as data not instructions. The agent verifies document content_hash against the submission's claim before any LLM call (per ADR-010). The agent's behavior is captured in FRAMEWORK_VERSION (currently 0.6.0) and SYSTEM_PROMPT_HASH (currently 69ef583c6dbe), both written into agent_version on every record per ADR-003 and ADR-007.
+
+**ingestion/** parses PDF documents and produces Document instances with extracted text, page-level chunks, and a computed content_hash. The package supersedes line 201 of the prior version of this document, which stated the reference implementation did not include OCR or document text extraction; Phase 3 sub-system 4 added structured PDF parsing without OCR.
+
+**retrieval/** provides three retrieval strategies over regulation corpora. BM25Index is the lexical primary (per ADR-011); VectorIndex is dense semantic retrieval over the Embedder Protocol; HybridIndex combines both via Reciprocal Rank Fusion. The Retriever class wraps any of them uniformly. The Embedder Protocol ships two implementations (HashEmbedder with no external dependencies, SentenceTransformerEmbedder as the opt-in [vector] extra) and accommodates any provider-backed implementation.
+
+**eval/** is the graded-example evaluation harness. It runs the agent over a JSONL dataset of (submission, expected_tier, expected_disposition) examples and produces tier-accuracy and disposition-accuracy metrics.
+
+**eval/attacks/** is a prompt-injection attack suite. The 12-attack baseline dataset covers eight categories spanning T-AI1 and T-AI2. The runner grades each attack by composable assertions (tier_must_be_in, disposition_must_be_in, rationale_must_not_contain, expected_to_raise) and reports pass rates overall, per category, and per threat ID.
+
+**eval/citations/** is the deterministic citation verifier. It resolves input_field_reference paths via a JSONPath-lite parser, extracts chunk_id mentions from reasoning text, and computes Jaccard token-overlap grounding scores. Four distinct outcome statuses (resolved, unresolvable_path, out_of_bounds, unknown_chunk) preserve audit signal a boolean would collapse.
+
+**eval/calibration/** computes Brier score, Expected Calibration Error, Maximum Calibration Error, and reliability-diagram data over (confidence_score, was_correct) pairs. The tier, disposition, and both-match dimensions are configurable.
+
+**eval/judge/** is the LLM-as-judge harness. It wraps any PydanticAI Model and grades a TriageRecord against a Rubric. Three pre-built rubrics ship (rationale coherence, citation grounding, mitigation appropriateness). Edge-case short-circuits handle vacuous cases without an LLM call (e.g., MITIGATION_APPROPRIATENESS returns score=1.0 for non-conditional-approve dispositions). Judge results carry judge_model_version and run_timestamp for audit traceability.
+
+The library is stateless: callers supply inputs, the library returns outputs. No HTTP, no database, no audit log writer, no scheduled jobs. Per ADR-008, those concerns belong to the deployment architecture below.
+
+The library's test suite (568 tests at FRAMEWORK_VERSION 0.6.0) runs in seconds against in-memory fixtures. Every Python package holds 100% line coverage; the test discipline is documented in the repo README.
+
+## Deployment architecture
+
+This document specifies the institutional deployment shape the reference library is consumed by: the transport layer, storage layer, audit access, retention enforcement, and the trust boundary controls that bind them. Per ADR-008, the library does not provide these directly; they are the deploying institution's responsibility. The deployment architecture is the recommended institutional shape, not a prescriptive standard.
+
+This document is the visual anchor for Phase 2. The deployment architecture defined here is referenced by docs/phase-2/02-trust-boundaries.md (which identifies what is inside the trust boundary and what is outside) and docs/phase-2/03-threat-model.md (which maps threats against the components named here).
+
+Forks of the framework adapt the component set, the data flow, and the deployment specifics to their regulatory context.
 
 ## Architecture overview
 
@@ -196,9 +277,9 @@ The exclusions below are the ones a reader might wrongly expect from this docume
 
 **Disaster recovery and backup architecture.** Database backup strategy, replication topology, and failover procedures are deployment configuration owned by the institution's infrastructure team.
 
-**Confidence-gated routing and human-in-the-loop UI workflows.** Confidence calibration is deferred to Phase 3 per Phase 1's explicit deferral. The HITL UI is part of Phase 3 (Build & Eval). The output contract supports the data needed for both; the specific routing logic and review UI are forthcoming.
+**Confidence-gated routing and human-in-the-loop UI workflows.** Confidence calibration measurement shipped in Phase 4 sub-system 3 (eval/calibration/); the library produces calibration metrics (Brier, ECE, MCE) over graded datasets. HITL routing thresholds and the review UI remain institutional configuration. The output contract supports the data needed for both; the specific routing logic and review UI are the institution's responsibility.
 
-**Document attachment parsing.** PDF, DOCX, and similar document attachments are referenced through the documentation_artifacts field of the input contract, not parsed by the agent. They exist for the human reviewer; the agent classifies from structured fields, not from unstructured document contents. This is a deliberate architectural commitment that keeps the agent's input surface defined and reviewable. The reference implementation does not include OCR, document text extraction, or attachment-content reasoning.
+**Document attachment parsing in the deployment architecture.** The deployment architecture's HTTP intake references documentation_artifacts through the input contract; transport-layer code does not parse them. However, the reference library's ingestion/ package (Phase 3 sub-system 4) does perform structured PDF parsing without OCR, producing Document instances that callers supply to the agent per ADR-009. The earlier blanket exclusion of "OCR, document text extraction, or attachment-content reasoning" has been superseded by the ingestion package; the deployment architecture's transport layer remains the institution's responsibility to wire the library's PDF parsing into.
 
 **Retry, circuit breaker, and async patterns.** Operational concerns including LLM provider call retries, circuit breaking on provider outage, and async classification with queue plus webhook callback are deployment configuration owned by the institution. The synchronous HTTP REST default is suitable for the vendor onboarding cadence (single submission, 10-30 second LLM latency, no real-time SLA). Institutions with higher submission volume or stricter SLAs may add async patterns on top. (Request idempotency, in contrast, is an architectural commitment, documented in the Idempotency and duplicate detection section above.)
 
@@ -219,7 +300,7 @@ This architecture is built on by:
 
 ## Status
 
-Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. All five Phase 2 artifacts (problem definition, system architecture, trust boundaries, threat model, and architecture decisions) are published.
+Phase 2 (Architecture & Threat Model) of the sitkastack Framework, complete as of May 24, 2026. Updated May 26, 2026 to add the "Reference library implementation" section reflecting the seven Python packages shipped in Phase 3 and Phase 4, and to reconcile the deployment architecture's prior assumptions (no OCR, calibration deferred) with the shipped library. All five Phase 2 artifacts are published.
 
 ## Author
 
