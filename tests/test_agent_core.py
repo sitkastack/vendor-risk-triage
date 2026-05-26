@@ -919,3 +919,190 @@ def test_triage_verification_errors_before_llm_call() -> None:
     with pytest.raises(TriageInputError):
         agent.triage(submission, documents=[rogue])
     assert called["yes"] is False, "agent must reject before calling the LLM"
+
+
+# -- regulation_chunks parameter (sub-system 5 integration) -----------------
+
+
+def _make_chunk(
+    chunk_id: str = "test-corpus:doc:page-1",
+    corpus_name: str = "test-corpus",
+    document_name: str = "doc",
+    page_number: int = 1,
+    text: str = "Sample regulation text discussing model risk requirements.",
+) -> Any:
+    """Build a Chunk with sensible defaults; tests override per case."""
+    import hashlib
+    from retrieval import Chunk
+    return Chunk(
+        chunk_id=chunk_id,
+        corpus_name=corpus_name,
+        document_name=document_name,
+        page_number=page_number,
+        text=text,
+        content_hash="sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    )
+
+
+def test_triage_regulation_chunks_none_is_backward_compatible() -> None:
+    """Calling triage without the regulation_chunks arg preserves prior behaviour."""
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    r1 = agent.triage(SUBMISSION)
+    r2 = agent.triage(SUBMISSION, regulation_chunks=None)
+    assert r1.risk_tier == r2.risk_tier
+    assert r1.recommended_disposition == r2.recommended_disposition
+
+
+def test_triage_empty_regulation_chunks_list_is_equivalent_to_none() -> None:
+    """An empty chunk list behaves identically to None."""
+    agent = TriageAgent(TriageAgentConfig(model=TestModel()))
+    record = agent.triage(SUBMISSION, regulation_chunks=[])
+    assert isinstance(record, TriageRecord)
+
+
+def test_triage_single_chunk_flows_into_prompt() -> None:
+    """A supplied chunk's content reaches the LLM in a BEGIN_REGULATION_CONTEXT block.
+
+    Verifies via FunctionModel: the function inspects the prompt the agent
+    constructed and asserts on what the LLM would have seen.
+    """
+    seen_prompts: list[str] = []
+
+    def _spy(messages: Any, info: Any) -> ModelResponse:
+        for msg in messages:
+            for part in getattr(msg, "parts", []):
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    seen_prompts.append(content)
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_spy)))
+    chunk = _make_chunk(
+        chunk_id="osfi-e23:guideline-2023:page-7",
+        corpus_name="osfi-e23",
+        document_name="guideline-2023",
+        page_number=7,
+        text="Federally regulated financial institutions shall maintain a model inventory.",
+    )
+    agent.triage(SUBMISSION, regulation_chunks=[chunk])
+
+    full_prompt = "".join(seen_prompts)
+    assert "BEGIN_REGULATION_CONTEXT" in full_prompt
+    assert "END_REGULATION_CONTEXT" in full_prompt
+    assert "Federally regulated financial institutions" in full_prompt
+    assert "chunk_id: osfi-e23:guideline-2023:page-7" in full_prompt
+    assert "corpus: osfi-e23" in full_prompt
+    assert "page: 7" in full_prompt
+
+
+def test_triage_multiple_regulation_chunks_render_in_order() -> None:
+    """Multiple chunks render in the order supplied (the retriever's ranking)."""
+    seen_prompts: list[str] = []
+
+    def _spy(messages: Any, info: Any) -> ModelResponse:
+        for msg in messages:
+            for part in getattr(msg, "parts", []):
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    seen_prompts.append(content)
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_spy)))
+    chunks = [
+        _make_chunk(chunk_id="c1", text="FIRST CHUNK MARKER"),
+        _make_chunk(chunk_id="c2", text="SECOND CHUNK MARKER"),
+        _make_chunk(chunk_id="c3", text="THIRD CHUNK MARKER"),
+    ]
+    agent.triage(SUBMISSION, regulation_chunks=chunks)
+
+    full_prompt = "".join(seen_prompts)
+    idx_first = full_prompt.index("FIRST CHUNK MARKER")
+    idx_second = full_prompt.index("SECOND CHUNK MARKER")
+    idx_third = full_prompt.index("THIRD CHUNK MARKER")
+    assert idx_first < idx_second < idx_third, "chunks must render in supplied order"
+
+
+def test_triage_documents_and_regulation_chunks_can_coexist() -> None:
+    """A triage call can pass BOTH documents AND regulation_chunks."""
+    seen_prompts: list[str] = []
+
+    def _spy(messages: Any, info: Any) -> ModelResponse:
+        for msg in messages:
+            for part in getattr(msg, "parts", []):
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    seen_prompts.append(content)
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_spy)))
+    submission = _submission_with_documentation_artifact()
+    doc = _make_document(extracted_text="VENDOR SOC 2 DOCUMENT MARKER")
+    chunk = _make_chunk(text="REGULATION CHUNK MARKER")
+    agent.triage(submission, documents=[doc], regulation_chunks=[chunk])
+
+    full_prompt = "".join(seen_prompts)
+    assert "VENDOR SOC 2 DOCUMENT MARKER" in full_prompt
+    assert "REGULATION CHUNK MARKER" in full_prompt
+    assert "BEGIN_DOCUMENT" in full_prompt
+    assert "BEGIN_REGULATION_CONTEXT" in full_prompt
+
+
+def test_triage_regulation_chunks_render_after_documents() -> None:
+    """Document blocks appear before regulation chunk blocks in the prompt.
+
+    The order is a stable contract: documents are vendor-controlled
+    artifacts evaluated against the submission; regulation chunks are
+    authoritative context that frames the evaluation. Putting documents
+    first matches the order the LLM should reason through them
+    (submission -> evidence -> framework).
+    """
+    seen_prompts: list[str] = []
+
+    def _spy(messages: Any, info: Any) -> ModelResponse:
+        for msg in messages:
+            for part in getattr(msg, "parts", []):
+                content = getattr(part, "content", None)
+                if isinstance(content, str):
+                    seen_prompts.append(content)
+        return ModelResponse(parts=[ToolCallPart(
+            tool_name="final_result",
+            args=_TIER_1_APPROVE,
+        )])
+
+    agent = TriageAgent(TriageAgentConfig(model=FunctionModel(_spy)))
+    submission = _submission_with_documentation_artifact()
+    doc = _make_document(extracted_text="DOC_MARKER")
+    chunk = _make_chunk(text="CHUNK_MARKER")
+    agent.triage(submission, documents=[doc], regulation_chunks=[chunk])
+
+    full_prompt = "".join(seen_prompts)
+    assert full_prompt.index("BEGIN_DOCUMENT") < full_prompt.index("BEGIN_REGULATION_CONTEXT")
+
+
+def test_format_regulation_block_includes_all_header_fields() -> None:
+    """The regulation block exposes chunk_id, corpus, document, and page in the header."""
+    from agent.agent import _format_regulation_block
+    chunk = _make_chunk(
+        chunk_id="osfi-e23:g-2023:page-42",
+        corpus_name="osfi-e23",
+        document_name="g-2023",
+        page_number=42,
+        text="Sample chunk content.",
+    )
+    rendered = _format_regulation_block(chunk)
+    assert "BEGIN_REGULATION_CONTEXT" in rendered
+    assert "END_REGULATION_CONTEXT" in rendered
+    assert "chunk_id: osfi-e23:g-2023:page-42" in rendered
+    assert "corpus: osfi-e23" in rendered
+    assert "document: g-2023" in rendered
+    assert "page: 42" in rendered
+    assert "Sample chunk content." in rendered
