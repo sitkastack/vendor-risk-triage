@@ -1,0 +1,59 @@
+vendor-risk-triage
+Copyright Robyn Toor and the sitkastack contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The framework's source code is original work licensed as above. The
+distributable IndexBundles under corpora/ embed text from third-party
+regulatory documents. Each embedded document retains its own terms,
+attributed below.
+
+==============================================================================
+Third-party regulatory texts embedded in corpora/
+==============================================================================
+
+corpora/nist-ai-rmf/
+    Source: NIST AI Risk Management Framework 1.0 (NIST AI 100-1)
+    Publisher: U.S. National Institute of Standards and Technology
+    URL: https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf
+    License: U.S. Government work, not subject to copyright protection in the
+        United States (17 U.S.C. § 105). Free reuse worldwide subject to local
+        copyright treatment of U.S. Government works.
+
+corpora/sox-pl-107-204/
+    Source: Sarbanes-Oxley Act of 2002 (Public Law 107-204), as compiled by
+        the Office of the Law Revision Counsel, U.S. House of Representatives
+    Publisher: U.S. Government Publishing Office
+    URL: https://www.govinfo.gov/content/pkg/COMPS-1883/pdf/COMPS-1883.pdf
+    License: U.S. federal statute. Edicts of government are not copyrightable
+        under U.S. law. Free reuse.
+
+corpora/eu-ai-act/
+    Source: Regulation (EU) 2024/1689 of the European Parliament and of the
+        Council of 13 June 2024 laying down harmonised rules on artificial
+        intelligence (Artificial Intelligence Act)
+    Publisher: European Parliament and Council of the European Union, via
+        EUR-Lex
+    URL: https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=OJ:L_202401689
+    License: Reuse permitted under Commission Decision 2011/833/EU on the
+        reuse of Commission documents, for commercial and non-commercial
+        purposes, with attribution. Attribution: "Source: EUR-Lex,
+        https://eur-lex.europa.eu/, European Union, 1998-present."
+
+==============================================================================
+Not embedded in this repository
+==============================================================================
+
+OSFI Guideline E-23 (Model Risk Management) is intentionally NOT included
+in the committed corpora/ directory. OSFI publications are subject to Crown
+copyright in the Government of Canada; non-commercial reproduction is
+permitted with attribution, but redistribution as part of a derivative
+software product carries terms users must evaluate for themselves. The
+integration test suite fetches OSFI E-23 at test run time directly from
+osfi-bsif.gc.ca; deploying organizations are expected to obtain their own
+authorized copy. See docs/corpus-manifest.md for details.
+
+ISO/IEC 42001:2023 is a commercially licensed standard published by the
+International Organization for Standardization. It is NOT included in this
+repository under any circumstances. Each licensee must purchase and ingest
+their own copy.
