@@ -7,8 +7,17 @@ Current contents:
 
 - ``audit_pack``: Per-record HTML render of a single TriageRecord
 - ``batch_index``: Multi-record HTML index linking to per-record packs
-- ``styles``: Shared inline CSS used by both renderers
+- ``audit_log``: Wire-format envelope for shipping TriageRecords to
+  SIEMs, archives, and event buses
+- ``styles``: Shared inline CSS used by both HTML renderers
 """
+from reporting.audit_log import (
+    ENVELOPE_SCHEMA_VERSION,
+    AuditLogEnvelope,
+    AuditLogParseError,
+    build_envelope,
+    parse_jsonl_line,
+)
 from reporting.audit_pack import (
     FRAMEWORK_VERSION,
     render_audit_pack,
@@ -28,8 +37,13 @@ from reporting.styles import (
 __all__ = [
     "ATTRIBUTION_FOOTER_TEMPLATE",
     "AUDIT_PACK_CSS",
+    "AuditLogEnvelope",
+    "AuditLogParseError",
     "BATCH_INDEX_CSS",
+    "ENVELOPE_SCHEMA_VERSION",
     "FRAMEWORK_VERSION",
+    "build_envelope",
+    "parse_jsonl_line",
     "render_audit_pack",
     "render_batch_index",
     "save_audit_pack",

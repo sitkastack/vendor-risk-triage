@@ -46,7 +46,7 @@ Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across 
 
 `eval/judge/` is the LLM-as-judge harness. It wraps any PydanticAI Model and grades a TriageRecord against a `Rubric`. Three pre-built rubrics ship: rationale coherence, citation grounding, and mitigation appropriateness. Edge-case short-circuits handle vacuous cases without an LLM call. Audit traceability through `judge_model_version` and `run_timestamp`.
 
-`reporting/` turns framework outputs into reader-facing HTML artifacts. `audit_pack` renders one TriageRecord as a per-record document a risk committee or external auditor would read; `batch_index` renders a list of records as an overview index linking to per-record packs. Self-contained HTML (inline CSS, no JavaScript, no external assets), print-stylesheet aware, white-label-friendly via a configurable attribution footer.
+`reporting/` turns framework outputs into reader-facing HTML artifacts and ships records to operational pipelines. `audit_pack` renders one TriageRecord as a per-record document a risk committee or external auditor would read; `batch_index` renders a list of records as an overview index. `audit_log` wraps records in a content-hashed envelope for shipping to SIEMs, archives, and event buses. Self-contained HTML (inline CSS, no JavaScript, no external assets), print-stylesheet aware, white-label-friendly via a configurable attribution footer.
 
 ### Documentation
 
@@ -56,6 +56,7 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/phase-1/` covers data contracts, privacy spec, synthetic data specification, and the extension guide
 - `docs/phase-2/` covers system architecture, trust boundaries, the full threat model (T-AI1 through T-AI8), and the architecture decision records
 - `docs/customization-guide.md` walks through customizing the framework for a specific deploying organization: intake checklist, configuration decision tree, extension points, a worked example, and anti-patterns to refuse
+- `docs/audit-log-shipping.md` specifies the envelope format for shipping TriageRecords to SIEMs, archives, and event buses with content-hash integrity verification and replay semantics
 - `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale
 

@@ -6,7 +6,8 @@ Reader-facing artifacts from framework outputs. Turns a `TriageRecord` (or a bat
 
 - `audit_pack.py` - per-record HTML render of a single `TriageRecord`
 - `batch_index.py` - multi-record HTML index linking to per-record packs
-- `styles.py` - shared inline CSS used by both renderers
+- `audit_log.py` - wire-format envelope for shipping records to SIEMs, archives, and event buses
+- `styles.py` - shared inline CSS used by both HTML renderers
 
 ## Quick start
 
@@ -57,6 +58,33 @@ html_text = render_audit_pack(
 ```
 
 When `calibration_svg` is not supplied, the calibration section is omitted entirely.
+
+### Audit log shipping
+
+To ship records to a SIEM, archive, or event bus, wrap them in an envelope:
+
+```python
+from reporting import build_envelope, parse_jsonl_line
+
+envelope = build_envelope(
+    record=triage_record,
+    sequence_number=next_seq_from_your_pipeline(),
+    deployment_id="acme-prod",
+)
+jsonl_line = envelope.to_jsonl_line()
+# Ship the line via your SIEM HEC, S3 PutObject, Kafka producer, etc.
+```
+
+On the receiver side:
+
+```python
+envelope = parse_jsonl_line(received_line)
+# parse_jsonl_line verifies the content hash by default; raises
+# AuditLogParseError on tampering or version mismatch.
+record = envelope.record  # the original TriageRecord
+```
+
+The envelope adds SHA-256 content-hash integrity, monotonic sequence numbers (deployment-pipeline assigned), deployment IDs for multi-tenant routing, and replay semantics. See `docs/audit-log-shipping.md` for the full spec, canonical-serialization rules, and illustrative Splunk/S3/Kafka consumer examples.
 
 ## Design choices
 
