@@ -35,14 +35,13 @@ The framework follows semantic versioning on `FRAMEWORK_VERSION`. The current va
 
 ### Where FRAMEWORK_VERSION lives
 
-The constant is currently defined in two places:
+The constant is defined in `_version.py` at the repository root as the single source of truth:
 
-- `agent/agent.py` (module-level `FRAMEWORK_VERSION: str = "0.6.0"`)
-- `reporting/audit_pack.py` (module-level `FRAMEWORK_VERSION: str = "0.6.0"`)
+```python
+FRAMEWORK_VERSION: str = "0.6.0"
+```
 
-Both must be updated together on any version bump. This duplication is a known issue queued for cleanup; until then, the maintenance procedure is "update both, run the tests, commit." A future patch will consolidate into a single `_version.py` source of truth.
-
-The `pyproject.toml` `version` field is presently out of sync (`0.2.0`); on the next release, sync it to match `FRAMEWORK_VERSION` and add a CI check that fails when the two diverge.
+Both `agent/agent.py` and `reporting/audit_pack.py` import the constant from `_version` rather than defining their own. To bump the version, edit `_version.py` and `pyproject.toml` together. CI verifies the two stay in sync via `scripts/check_version_sync.py`; the workflow step fails if they disagree.
 
 ## 2. SYSTEM_PROMPT update procedure
 
@@ -217,8 +216,7 @@ When cutting a versioned release:
 - [ ] Drift check passes (`python scripts/check_drift.py`)
 - [ ] 3-run test stability verified (`for i in 1 2 3; do python -m pytest 2>&1 | tail -1; done`)
 - [ ] No em-dashes in markdown documentation (CI-enforced)
-- [ ] `FRAMEWORK_VERSION` consistent in `agent/agent.py` and `reporting/audit_pack.py`
-- [ ] `pyproject.toml` `version` matches `FRAMEWORK_VERSION` (currently out of sync; fix on next release)
+- [ ] `FRAMEWORK_VERSION` in `_version.py` matches `pyproject.toml` `version` (CI-enforced via `scripts/check_version_sync.py`)
 - [ ] CHANGELOG entry written naming user-visible changes
 - [ ] Migration document written if schema major version bumps
 - [ ] Customization guide updated if `TriageAgentConfig` signature changed
@@ -252,7 +250,5 @@ Major releases ship rarely. The 1.0 target is mid-2027; until then, minor bumps 
 
 ## Notes on known issues to fix during routine maintenance
 
-- `FRAMEWORK_VERSION` is duplicated in `agent/agent.py` and `reporting/audit_pack.py`. Consolidate to a single `_version.py` source of truth on the next minor release.
-- `pyproject.toml` `version = "0.2.0"` is stale. Sync to `FRAMEWORK_VERSION` and add a CI check that fails on divergence.
 - The drift check uses the deterministic FunctionModel; real-LLM drift is a Phase 6 deferral. When Phase 6 ships, this maintenance procedure gains a step for running the real-LLM drift mode on prompt changes.
 - The continuous monitoring infrastructure (separate sitkastack consulting tooling) is out of scope for this framework's maintenance procedures. Maintainers of that tooling work from their own runbook.

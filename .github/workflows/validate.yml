@@ -22,6 +22,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Verify pyproject.toml version matches FRAMEWORK_VERSION
+        run: |
+          python scripts/check_version_sync.py
+          if [ $? -ne 0 ]; then
+            echo "::error::pyproject.toml version and _version.FRAMEWORK_VERSION disagree. Sync them and commit."
+            exit 1
+          fi
+
       - name: Verify schemas are valid JSON Schema 2020-12
         run: |
           python -c "
@@ -39,7 +47,7 @@ jobs:
           "
 
       - name: Run pytest with coverage
-        run: pytest -v --cov=agent --cov=eval --cov=ingestion --cov=retrieval --cov=reporting --cov-report=term-missing --cov-fail-under=95
+        run: pytest -v --cov=_version --cov=agent --cov=eval --cov=ingestion --cov=retrieval --cov=reporting --cov-report=term-missing --cov-fail-under=95
 
       - name: Check for classification drift against baseline
         run: |

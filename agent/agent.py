@@ -99,6 +99,11 @@ from agent.output_models import (
 from ingestion.document import Document
 from retrieval.chunk import Chunk
 
+# FRAMEWORK_VERSION lives in the top-level ``_version`` module so the
+# constant is shared with ``reporting/audit_pack.py`` and verified
+# against ``pyproject.toml`` in CI. See ``_version.py`` for history.
+from _version import FRAMEWORK_VERSION
+
 
 __all__ = [
     "TriageAgent",
@@ -113,21 +118,8 @@ __all__ = [
 
 
 # Public constants. Versioning lives here so callers can read it without
-# constructing an agent.
-
-FRAMEWORK_VERSION: str = "0.6.0"
-"""Semver of the vrt-agent code. Bumped on any behavior change.
-
-Sub-system 5 (May 26, 2026): bumped from 0.5.0 to 0.6.0. The agent now
-accepts optional regulation context (retrieved chunks from a regulation
-corpus) and includes them in the LLM prompt under
-BEGIN_REGULATION_CONTEXT / END_REGULATION_CONTEXT delimiters. This is a
-material capability change; records produced under 0.6.0 are
-distinguishable from 0.5.0 records by inspecting agent_version.
-
-Sub-system 4 (May 26, 2026): bumped from 0.4.0 to 0.5.0. The agent
-gained the documents parameter for vendor artifact ingestion.
-"""
+# constructing an agent. FRAMEWORK_VERSION is imported at the top of the
+# module from the canonical _version source.
 
 OUTPUT_SCHEMA_VERSION: str = "1.0.0"
 """Semver of the output contract this agent emits to.

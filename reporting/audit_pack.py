@@ -58,20 +58,19 @@ from typing import Any, Optional, Union
 from agent.output_models import TriageRecord
 from reporting.styles import AUDIT_PACK_CSS, ATTRIBUTION_FOOTER_TEMPLATE
 
+# FRAMEWORK_VERSION lives in the top-level ``_version`` module. Importing
+# from there (rather than from ``agent.agent``) keeps reporting's
+# dependency surface limited to ``agent.output_models``: the layering
+# concern is avoided because ``_version`` has no other dependencies and
+# is shared with ``pyproject.toml`` via the CI sync check.
+from _version import FRAMEWORK_VERSION
+
 
 __all__ = [
     "render_audit_pack",
     "save_audit_pack",
     "FRAMEWORK_VERSION",
 ]
-
-
-# Pinned so the attribution footer can be rendered without importing
-# the agent module at template-render time (which would create a
-# layering issue: reporting depends on agent.output_models for the
-# TriageRecord type; we accept that single dependency but avoid a
-# second one on the agent's FRAMEWORK_VERSION constant).
-FRAMEWORK_VERSION: str = "0.6.0"
 
 
 # Disposition copy used in the banner.
