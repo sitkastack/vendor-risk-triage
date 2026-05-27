@@ -124,7 +124,11 @@ known regulation vocabulary.
 
 ## Building a corpus
 
-For each regulation you have the right to redistribute or use:
+For deploying organizations: where to obtain authorized copies of the five primary regulations (OSFI E-23, NIST AI RMF, ISO 42001, EU AI Act, SOX/ICFR) and the licensing terms for each, see [docs/corpus-manifest.md](../docs/corpus-manifest.md).
+
+The framework does not ship regulation texts; the loader is corpus-agnostic and the manifest documents the fetch-and-index pattern.
+
+For each regulation you have the right to redistribute or use (see the manifest for licensing details per source):
 
 ```python
 from pathlib import Path
@@ -134,22 +138,22 @@ loader = CorpusLoader()
 all_chunks = []
 
 for corpus_name, document_name, pdf_path in [
-    ("osfi-e23", "guideline-2023-09-15", Path("corpora/osfi-e23.pdf")),
-    ("nist-ai-rmf", "1.0", Path("corpora/nist-ai-rmf-1.0.pdf")),
-    ("eu-ai-act", "regulation-2024-1689", Path("corpora/eu-ai-act.pdf")),
+    ("osfi-e23",    "guideline-2027",        Path("/secure/corpora/osfi-e23/guideline-2027.pdf")),
+    ("nist-ai-rmf", "100-1",                 Path("/secure/corpora/nist-ai-rmf/100-1.pdf")),
+    ("eu-ai-act",   "regulation-2024-1689",  Path("/secure/corpora/eu-ai-act/regulation-2024-1689-en.pdf")),
 ]:
     chunks = loader.load_pdf(
         corpus_name=corpus_name,
         document_name=document_name,
         content=pdf_path.read_bytes(),
+        sectionize=True,
     )
     all_chunks.extend(chunks)
 
 retriever = Retriever(BM25Index(all_chunks))
 ```
 
-The Retriever can be reused across many triage calls; the index does
-not change unless the corpus does.
+The Retriever can be reused across many triage calls; the index does not change unless the corpus does. The `sectionize=True` flag groups text by detected section headings; see the [section-aware chunking](#section-aware-chunking-phase-45) section.
 
 ## Using retrieval in a triage
 
@@ -320,9 +324,6 @@ Tagged for follow-up commits within sub-system 5:
 
 - `[deferred-subsystem-5-followup]` Persistent BM25 indexes (parquet
   format, lazy-loaded)
-- `[deferred-subsystem-5-followup]` Real corpus manifest (URLs and
-  fetch instructions for the five primary regulations, when
-  redistribution terms allow)
 
 Tagged for Phase 4 follow-up:
 
