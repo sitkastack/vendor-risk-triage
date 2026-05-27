@@ -108,15 +108,15 @@ class CorpusSource:
 CORPUS_REGISTRY: Dict[str, CorpusSource] = {
     "osfi-e23": CorpusSource(
         name="osfi-e23",
-        url=(
-            "https://www.osfi-bsif.gc.ca/sites/default/files/2025-09/"
-            "gd-mrm-2027.pdf"
-        ),
-        # Pin placeholder. Replace with the actual SHA-256 of the
-        # downloaded PDF; see the corpus manifest for the verification
-        # workflow. Integration tests calling fetch_corpus will fail
-        # loudly until pins are filled.
-        sha256_hex="0" * 64,
+        # OSFI's new (Drupal-based) site does not publish a stable
+        # /sites/default/files/ PDF for guidelines; the previous URL
+        # (gd-mrm-2027.pdf under sites/default/files/2025-09/) returns
+        # 404 as of 2026-05-26. The "Generate PDF" endpoint on the
+        # guideline's landing page produces an authoritative PDF
+        # rendering and is what the page itself links to. The node id
+        # (1893) identifies the guideline within OSFI's CMS.
+        url="https://www.osfi-bsif.gc.ca/en/print/pdf/node/1893",
+        sha256_hex="64e6d28b746dd512f1c99dda0d172dce3126792f026f7e754c68f5fdd71a3614",
         filename="osfi-e23-guideline-2027.pdf",
         document_name="guideline-2027",
     ),
