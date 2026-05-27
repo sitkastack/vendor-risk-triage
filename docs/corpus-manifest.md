@@ -208,6 +208,24 @@ as2201_chunks = CorpusLoader().load_pdf(
 
 ## Operational guidance
 
+### Integration tests as a worked example
+
+The framework's `tests/integration/` suite exercises the full pipeline against real corpora end-to-end. It serves as both a regression test and a worked example of how to integrate a corpus:
+
+```bash
+pytest -m integration       # FunctionModel agent; no API key required
+```
+
+On first run, the cache fetcher downloads each registered PDF, fails with a "placeholder hash" error, and prints the actual SHA-256 to copy into `tests/integration/corpora_cache.py`. After the pins are updated, subsequent runs verify the cached bytes against the pin.
+
+To build distributable IndexBundles from cached PDFs (NIST + SOX + EU AI Act; OSFI excluded by license):
+
+```bash
+python -m scripts.build_corpus_bundles    # writes to corpora/<name>/
+```
+
+The script computes SentenceTransformerEmbedder embeddings (default model `all-MiniLM-L6-v2`, 384 dimensions) and saves each bundle as `corpora/<name>/<name>.bundle.tgz`.
+
 ### Storage convention
 
 The framework imposes no storage convention. A reasonable institutional

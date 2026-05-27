@@ -34,7 +34,7 @@ Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across 
 
 `ingestion/` is the PDF document parsing layer with bait-and-switch hash verification against the submission's claimed `content_hash` values. Any document whose extracted content fails the hash check causes the agent to refuse before any LLM call.
 
-`retrieval/` provides three retrieval strategies over regulation corpora. `BM25Index` is lexical retrieval via `rank-bm25`. `VectorIndex` is dense semantic retrieval over the `Embedder` Protocol (with `HashEmbedder` and `SentenceTransformerEmbedder` shipped). `HybridIndex` combines both via Reciprocal Rank Fusion. The `Retriever` wraps any of them uniformly.
+`retrieval/` provides three retrieval strategies over regulation corpora. `BM25Index` is lexical retrieval via `rank-bm25`. `VectorIndex` is dense semantic retrieval over the `Embedder` Protocol (with `HashEmbedder` and `SentenceTransformerEmbedder` shipped). `HybridIndex` combines both via Reciprocal Rank Fusion. The `Retriever` wraps any of them uniformly. `IndexBundle` persists chunks + pre-computed embeddings to disk as a single tar.gz file with content-hash verification and atomic save, eliminating the ~30-second cold-start embedding cost for production deployments.
 
 `eval/` is the graded-example evaluation harness. It runs the agent over a JSONL dataset and produces tier-accuracy, disposition-accuracy, and joint-accuracy metrics.
 
@@ -112,6 +112,19 @@ Every code commit lands with:
 - Three stability runs of the full test suite at the same passing count
 
 Coverage and tests are enforced in CI. The audit discipline is enforced by the author.
+
+### Integration tests against real corpora
+
+The default `pytest` run is fast and offline (unit tests only). A separate integration test suite exercises the framework end-to-end against real regulation PDFs (OSFI E-23, NIST AI RMF, EU AI Act, SOX):
+
+```bash
+pytest -m integration                       # default agent (FunctionModel; free, fast)
+pytest -m "integration and real_llm"        # real LLM (requires ANTHROPIC_API_KEY, costs money)
+```
+
+PDFs are fetched from authoritative sources on first run, cached to `~/.cache/sitkastack-vrt/corpora/`, and SHA-256 verified against pinned hashes. Network failures and missing PDFs skip cleanly rather than fail. See `tests/integration/README.md` for setup, pin-update workflow, and how to add a new corpus.
+
+The OSFI E-23 corpus is not redistributed in the repo because Crown copyright reproduction terms are non-commercial-only; the integration test fetches it from osfi-bsif.gc.ca at run time. See `docs/corpus-manifest.md` for licensing details on every supported regulation.
 
 ## How to follow along
 

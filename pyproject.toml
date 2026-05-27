@@ -27,3 +27,10 @@ vector = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: integration tests that touch network or real corpora; skipped in default runs",
+    "real_llm: tests that call a real LLM (requires API key, costs money); skipped in default runs",
+]
+addopts = [
+    "-m", "not integration and not real_llm",
+]
