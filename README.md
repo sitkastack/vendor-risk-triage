@@ -46,6 +46,8 @@ Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across 
 
 `eval/judge/` is the LLM-as-judge harness. It wraps any PydanticAI Model and grades a TriageRecord against a `Rubric`. Three pre-built rubrics ship: rationale coherence, citation grounding, and mitigation appropriateness. Edge-case short-circuits handle vacuous cases without an LLM call. Audit traceability through `judge_model_version` and `run_timestamp`.
 
+`reporting/` turns framework outputs into reader-facing HTML artifacts. `audit_pack` renders one TriageRecord as a per-record document a risk committee or external auditor would read; `batch_index` renders a list of records as an overview index linking to per-record packs. Self-contained HTML (inline CSS, no JavaScript, no external assets), print-stylesheet aware, white-label-friendly via a configurable attribution footer.
+
 ### Documentation
 
 The phase-by-phase design documents live in `docs/`:
