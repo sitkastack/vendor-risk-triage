@@ -43,9 +43,16 @@ from __future__ import annotations
 import hashlib
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
+
+# CorpusSource and CORPUS_REGISTRY now live in retrieval/corpora.py as
+# part of the framework's runtime surface (so cli/cmd_corpus.py and
+# scripts/build_corpus_bundles.py can import them without depending on
+# the tests package). They are re-exported here for backwards
+# compatibility with any code that still imports from
+# tests.integration.corpora_cache.
+from retrieval.corpora import CORPUS_REGISTRY, CorpusSource
 
 
 __all__ = [
@@ -74,89 +81,6 @@ class CorpusFetchError(Exception):
     - SHA-256 mismatch after download
     - Local file system error writing the cached copy
     """
-
-
-@dataclass(frozen=True)
-class CorpusSource:
-    """Provenance record for a fetchable corpus PDF.
-
-    Attributes:
-        name: Short identifier for the corpus. Used as the cache
-            subdirectory name and as ``corpus_name`` when the test
-            wraps the bytes in a CorpusLoader call.
-        url: Authoritative source URL (the regulator's publication
-            endpoint). Recorded in docs/corpus-manifest.md.
-        sha256_hex: Pinned SHA-256 of the expected PDF bytes, hex
-            string (no ``sha256:`` prefix). When the regulator
-            publishes an amendment, this hash will no longer match
-            and tests will fail until the pin is updated by a human.
-        filename: Filename for the cached copy on disk. Stable;
-            renaming forces a refetch.
-        document_name: ``document_name`` to use when wrapping the
-            bytes in a Chunk via CorpusLoader. Recorded here so the
-            chunk_id naming convention is consistent across test
-            and production paths.
-    """
-
-    name: str
-    url: str
-    sha256_hex: str
-    filename: str
-    document_name: str
-
-
-CORPUS_REGISTRY: Dict[str, CorpusSource] = {
-    "osfi-e23": CorpusSource(
-        name="osfi-e23",
-        # OSFI's new (Drupal-based) site does not publish a stable
-        # /sites/default/files/ PDF for guidelines; the previous URL
-        # (gd-mrm-2027.pdf under sites/default/files/2025-09/) returns
-        # 404 as of 2026-05-26. The "Generate PDF" endpoint on the
-        # guideline's landing page produces an authoritative PDF
-        # rendering and is what the page itself links to. The node id
-        # (1893) identifies the guideline within OSFI's CMS.
-        url="https://www.osfi-bsif.gc.ca/en/print/pdf/node/1893",
-        sha256_hex="64e6d28b746dd512f1c99dda0d172dce3126792f026f7e754c68f5fdd71a3614",
-        filename="osfi-e23-guideline-2027.pdf",
-        document_name="guideline-2027",
-    ),
-    "nist-ai-rmf": CorpusSource(
-        name="nist-ai-rmf",
-        url="https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf",
-        sha256_hex="7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
-        filename="nist-ai-rmf-100-1.pdf",
-        document_name="100-1",
-    ),
-    "eu-ai-act": CorpusSource(
-        name="eu-ai-act",
-        url=(
-            "https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/"
-            "?uri=OJ:L_202401689"
-        ),
-        sha256_hex="bba630444b3278e881066774002a1d7824308934f49ccfa203e65be43692f55e",
-        filename="eu-ai-act-regulation-2024-1689-en.pdf",
-        document_name="regulation-2024-1689",
-    ),
-    "sox-pl-107-204": CorpusSource(
-        name="sox-pl-107-204",
-        url="https://www.govinfo.gov/content/pkg/COMPS-1883/pdf/COMPS-1883.pdf",
-        sha256_hex="048689e26cf64023fa38849e3d1d20f61315b3257b0d18e3717b91c6c6c672eb",
-        filename="sox-pl-107-204.pdf",
-        document_name="pl-107-204",
-    ),
-}
-"""Registry of fetchable corpus sources.
-
-The SHA-256 pins are placeholders (all-zero) on first commit. The first
-``make integration-cache`` run downloads each PDF, computes the actual
-hash, and prints an update snippet for this dict. The pins are then
-committed by hand.
-
-This deliberately requires a human-in-the-loop step. Pinning the hash
-prevents silent corpus drift; bumping the pin is the moment a human
-reviews whether the new corpus version still matches the integration
-test's expected behavior (citations, tier outputs, audit-trail format).
-"""
 
 
 def cache_dir() -> Path:

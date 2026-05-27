@@ -138,7 +138,7 @@ def _run_list() -> int:
     """Print the registered corpora."""
     try:
         from scripts.build_corpus_bundles import _COMMITTED_CORPORA
-        from tests.integration.corpora_cache import CORPUS_REGISTRY
+        from retrieval.corpora import CORPUS_REGISTRY
     except ImportError as exc:  # pragma: no cover - defensive; framework's own modules always importable in normal operation
         print(
             f"ERROR: could not import corpus registry: {exc}",

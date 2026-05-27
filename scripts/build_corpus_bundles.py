@@ -56,7 +56,8 @@ from retrieval import (
     IndexBundle,
     SentenceTransformerEmbedder,
 )
-from tests.integration.corpora_cache import CORPUS_REGISTRY, fetch_corpus
+from retrieval.corpora import CORPUS_REGISTRY
+from tests.integration.corpora_cache import fetch_corpus
 
 
 # Corpora that ARE committed into the repo. OSFI is excluded; users
