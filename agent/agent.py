@@ -89,6 +89,7 @@ from pydantic_ai.models import Model
 
 from agent.output_models import (
     ConfidenceSignal,
+    CostEstimate,
     Disposition,
     EvidenceCitation,
     FrameworkTag,
@@ -122,7 +123,7 @@ __all__ = [
 # constructing an agent. FRAMEWORK_VERSION is imported at the top of the
 # module from the canonical _version source.
 
-OUTPUT_SCHEMA_VERSION: str = "1.1.0"
+OUTPUT_SCHEMA_VERSION: str = "1.2.0"
 """Semver of the output contract this agent emits to.
 
 Locked to the Phase 1 contract at ``schemas/output-contract-1.0.0.schema.json``.
@@ -508,6 +509,114 @@ class TriageAgent:
         """
         return f"TriageAgent(agent_version={self._agent_version!r})"
 
+    def _capture_cost_estimate(
+        self,
+        result: Any,
+        correlation_id: str,
+    ) -> Optional["CostEstimate"]:
+        """Build a CostEstimate from the LLM result, or return None.
+
+        Looks up the configured model_id in the framework's price
+        table. When the model is unknown (FunctionModel, TestModel,
+        or any model not in the published table), returns None and
+        the TriageRecord's cost_estimate field stays absent.
+
+        Always emits the llm.call.cost_recorded observability event
+        and increments the vrt_llm_tokens_total histograms, even when
+        the model is unknown (tokens are observed; the dollar figure
+        is not). This lets deployments aggregate token usage across
+        all model configurations.
+
+        When the model IS known, also increments
+        vrt_llm_cost_usd_total with the computed cost.
+        """
+        # PydanticAI 0.0.x had usage() as a method; current versions
+        # expose it as a property that still callable for backward
+        # compat (which fires a deprecation warning). Read attributes
+        # directly off the property value; only fall back to calling
+        # if input_tokens is not directly readable.
+        usage = result.usage
+        try:
+            input_tokens = int(usage.input_tokens)
+            output_tokens = int(usage.output_tokens)
+        except (AttributeError, TypeError, ValueError):
+            # Fall back to calling usage() if it's still a method-style
+            # API (older PydanticAI). Defensive: if both shapes fail,
+            # we degrade silently and emit no cost event.
+            try:
+                if callable(usage):
+                    usage = usage()
+                input_tokens = int(usage.input_tokens)
+                output_tokens = int(usage.output_tokens)
+            except (AttributeError, TypeError, ValueError):
+                return None
+
+        model_id = str(self._config.model)
+        from pricing import compute_cost, PRICE_TABLE_VERSION, lookup_price
+        from observability.events import EventStatus
+
+        # Always emit the token observation, even for unknown models.
+        # Tokens are a quantity worth tracking regardless of whether
+        # we can resolve them to a dollar figure.
+        self._observability.histogram_observe(
+            "vrt_llm_tokens_total",
+            input_tokens,
+            labels={"kind": "input", "model": model_id},
+        )
+        self._observability.histogram_observe(
+            "vrt_llm_tokens_total",
+            output_tokens,
+            labels={"kind": "output", "model": model_id},
+        )
+
+        cost_usd = compute_cost(model_id, input_tokens, output_tokens)
+        if cost_usd is None:
+            # Unknown model. Emit cost_recorded event with the tokens
+            # observed but a null cost so consumers can see the call
+            # happened on an unpriced model.
+            self._observability.emit_event(
+                "llm.call.cost_recorded",
+                status=EventStatus.SUCCESS,
+                correlation_id=correlation_id,
+                attributes={
+                    "model_id": model_id,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "estimated_cost_usd": None,
+                    "price_table_version": PRICE_TABLE_VERSION,
+                    "reason": "model_id_not_in_price_table",
+                },
+            )
+            return None
+
+        # Known model. Build the CostEstimate, increment the cost
+        # counter, and emit the cost_recorded event.
+        cost_estimate_obj = CostEstimate(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model_id=model_id,
+            estimated_cost_usd=cost_usd,
+            price_table_version=PRICE_TABLE_VERSION,
+        )
+        self._observability.counter_inc(
+            "vrt_llm_cost_usd_total",
+            value=cost_usd,
+            labels={"model": model_id, "status": "success"},
+        )
+        self._observability.emit_event(
+            "llm.call.cost_recorded",
+            status=EventStatus.SUCCESS,
+            correlation_id=correlation_id,
+            attributes={
+                "model_id": model_id,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "estimated_cost_usd": cost_usd,
+                "price_table_version": PRICE_TABLE_VERSION,
+            },
+        )
+        return cost_estimate_obj
+
     def triage(
         self,
         submission: dict[str, Any],
@@ -696,6 +805,18 @@ class TriageAgent:
                         "vrt_llm_call_duration_seconds",
                         llm_duration,
                     )
+
+                    # Cost capture: pull token usage from the LLM result
+                    # and resolve to a dollar figure via the price table.
+                    # When the configured model is not in the table
+                    # (FunctionModel, TestModel, or any model the
+                    # framework does not publish prices for),
+                    # cost_estimate stays None and the record omits
+                    # the field. This is the framework's contract:
+                    # cost data is best-effort, never required.
+                    cost_estimate_obj = self._capture_cost_estimate(
+                        result, correlation_id,
+                    )
                 except Exception as exc:
                     llm_duration = time.time() - llm_start_time
                     self._observability.emit_event(
@@ -747,6 +868,7 @@ class TriageAgent:
                         regulatory_framework_tags=classification.regulatory_framework_tags,
                         review_interval_days=classification.review_interval_days,
                         correlation_id=correlation_id,
+                        cost_estimate=cost_estimate_obj,
                     )
                 self._observability.emit_event(
                     "validation.completed",

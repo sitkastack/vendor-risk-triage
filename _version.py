@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.7.0"
+FRAMEWORK_VERSION: str = "0.8.0"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,19 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.8.0 (sub-system 7, Phase 6 SS3-A): cost tracking infrastructure.
+  New ``pricing`` package with ``ModelPriceTable`` covering all four
+  major providers' lineups (33 models: Anthropic, OpenAI, Google,
+  Mistral). TriageRecord gains optional ``cost_estimate`` nested
+  field (input_tokens, output_tokens, model_id, estimated_cost_usd,
+  price_table_version). Output contract bumped to 1.2.0 (additive
+  minor). Agent captures token usage from PydanticAI result and
+  computes dollar cost; when model is not in the price table
+  (FunctionModel, TestModel, custom adapters), cost_estimate stays
+  absent. New observability event ``llm.call.cost_recorded`` plus
+  metrics ``vrt_llm_cost_usd_total`` (counter) and
+  ``vrt_llm_tokens_total`` (histogram). Standard rates only; batch
+  discounts, prompt caching, long-context surcharges not modeled.
 - 0.7.0 (sub-system 6, Phase 6 SS2): observability package added.
   TriageRecord gains optional ``correlation_id`` field (output
   contract bumped to 1.1.0). TriageAgent gains optional

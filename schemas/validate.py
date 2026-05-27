@@ -66,6 +66,7 @@ def validate_input(submission: dict[str, Any]) -> tuple[bool, list[dict[str, Any
 _OUTPUT_SCHEMA_FILES: dict[str, str] = {
     "1.0.0": "output-contract-1.0.0.schema.json",
     "1.1.0": "output-contract-1.1.0.schema.json",
+    "1.2.0": "output-contract-1.2.0.schema.json",
 }
 """Mapping from output_schema_version to the schema file that validates it.
 

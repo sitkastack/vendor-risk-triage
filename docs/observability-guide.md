@@ -8,7 +8,7 @@ The framework's default is silent: a deployment that does nothing sees no observ
 
 Every triage operation emits three classes of observability signals:
 
-**Events** are structured records describing what happened. The framework emits twelve event names, each with a documented shape: `agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`. Each event includes a timestamp, status, optional duration_ms, optional correlation_id, and an attributes dict.
+**Events** are structured records describing what happened. The framework emits thirteen event names, each with a documented shape: `agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `llm.call.cost_recorded`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`. Each event includes a timestamp, status, optional duration_ms, optional correlation_id, and an attributes dict.
 
 **Metrics** are numeric observations: counters for things happening, histograms for distributions, gauges for point-in-time values. The framework defines ten built-in metric names with bounded label cardinality, suitable for Prometheus, StatsD, or OpenTelemetry collectors.
 
@@ -89,6 +89,8 @@ The event names are part of the framework's public surface as of 0.7.0. Renames 
 
 `llm.call.started` and `llm.call.completed` bracket the LLM provider call inside triage. Attributes include `model` and `error_type` (on error). Duration_ms on completion captures just the LLM round trip.
 
+`llm.call.cost_recorded` fires after a successful LLM call (added in 0.8.0). Attributes: `model_id`, `input_tokens`, `output_tokens`, `estimated_cost_usd`, `price_table_version`, plus `reason` when the model is not in the price table (set to `model_id_not_in_price_table`). The event fires for both known and unknown models so deployments can aggregate token usage across all model configurations; the dollar figure is null for unknown models. Use this event to track LLM spend per triage operation.
+
 `validation.started` and `validation.completed` bracket TriageRecord validation. Useful for diagnosing whether classification failures are LLM errors or schema-validation errors.
 
 `retrieval.started` and `retrieval.completed` are reserved for future retrieval observability; the framework emits them when retrieval is invoked through observability-aware retriever wrappers (a Phase 6 SS4 deliverable). Phase 6 SS2 ships the event names but does not emit them from the agent's `triage()` path because retrieval is caller-driven; deployments that want to track retrieval emit these events themselves around their `Retriever.search()` calls.
@@ -147,13 +149,14 @@ class Metrics(Protocol):
 
 `counter_inc` records a monotonic increment. `histogram_observe` records one observation of a distribution. `gauge_set` records a point-in-time value. The three primitives map cleanly onto Prometheus, StatsD, OpenTelemetry metrics, and most other metrics libraries.
 
-### Ten built-in metric names
+### Twelve built-in metric names
 
 Counters (monotonic; reset only on process restart):
 
 - `vrt_triage_total{tier, disposition, status}`: count of completed triages, labeled by tier (tier_1_low through tier_4_high), disposition (approve, conditional_approve, escalate_senior_review, reject), and status (success, error).
 - `vrt_llm_call_total{status}`: count of LLM provider calls, labeled by status (success, error).
 - `vrt_llm_errors_total{error_type}`: count of LLM errors, labeled by Python exception class name.
+- `vrt_llm_cost_usd_total{model, status}`: cumulative LLM spend in USD (added in 0.8.0), labeled by model_id and status. Only incremented for models in the framework's price table; unknown models do not contribute to this counter but their token counts still appear in `vrt_llm_tokens_total`.
 - `vrt_validation_errors_total{error_type}`: count of validation failures, labeled by error type.
 - `vrt_drift_runs_total{outcome}`: count of drift check runs, labeled by outcome (no_drift, soft_drift, hard_drift).
 
@@ -161,6 +164,7 @@ Histograms (distribution of observed values):
 
 - `vrt_triage_duration_seconds`: wall-clock duration of a complete triage call.
 - `vrt_llm_call_duration_seconds`: wall-clock duration of an LLM provider call.
+- `vrt_llm_tokens_total{kind, model}`: token counts per LLM call (added in 0.8.0), labeled by kind (input or output) and model_id. Emitted for every LLM call regardless of whether the model is in the price table.
 - `vrt_retrieval_duration_seconds`: wall-clock duration of a retrieval call (emitted by observability-aware retriever wrappers).
 - `vrt_retrieval_chunk_count`: number of chunks returned by a retrieval call.
 - `vrt_audit_pack_size_bytes`: size in bytes of a rendered audit pack.
@@ -394,7 +398,7 @@ For deployments persisting records to a database, ensure the `correlation_id` co
 
 ## Versioning and stability
 
-The observability surface is part of the framework's public commitment as of 0.7.0. The twelve event names, ten metric names, and five span names are stable. Renames or removals require a major version bump per `docs/maintenance-workflow.md`.
+The observability surface is part of the framework's public commitment as of 0.7.0. As of 0.8.0, the thirteen event names, twelve metric names, and five span names are stable. Renames or removals require a major version bump per `docs/maintenance-workflow.md`.
 
 New events, new metrics, and new spans can ship in minor versions. Deployments depending on specific event names should write code defensively (filter for the names they expect, ignore unknown names) rather than treating the framework's emissions as a closed schema.
 

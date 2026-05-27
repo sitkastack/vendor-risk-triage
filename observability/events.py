@@ -89,6 +89,7 @@ class EventName(str, Enum):
     TRIAGE_COMPLETED = "triage.completed"
     LLM_CALL_STARTED = "llm.call.started"
     LLM_CALL_COMPLETED = "llm.call.completed"
+    LLM_CALL_COST_RECORDED = "llm.call.cost_recorded"
     RETRIEVAL_STARTED = "retrieval.started"
     RETRIEVAL_COMPLETED = "retrieval.completed"
     VALIDATION_STARTED = "validation.started"

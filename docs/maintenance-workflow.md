@@ -51,13 +51,14 @@ The CLI is invoked through two paths: the installed `vrt` console script (regist
 
 ### Observability surface compatibility
 
-As of `0.7.0`, the framework emits a defined set of observability signals through the `observability` package:
+As of `0.7.0`, the framework emits a defined set of observability signals through the `observability` package. As of `0.8.0`, the surface is extended with one additional event name (`llm.call.cost_recorded`) and two additional metric names (`vrt_llm_cost_usd_total`, `vrt_llm_tokens_total`):
 
-- Twelve event names (`agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`)
-- Ten metric names (the `vrt_*` family documented in `docs/observability-guide.md`)
+- Thirteen event names (`agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `llm.call.cost_recorded`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`)
+- Twelve metric names (the `vrt_*` family documented in `docs/observability-guide.md`, plus `vrt_llm_cost_usd_total` and `vrt_llm_tokens_total` added in 0.8.0)
 - Five span names (`vrt.triage`, `vrt.llm_call`, `vrt.retrieval`, `vrt.validation`, `vrt.audit_pack.render`)
 - The three Protocol interfaces (`EventLogger`, `Metrics`, `Tracer`)
 - The `correlation_id` field on `TriageRecord` (optional, 16-character lowercase hex when populated)
+- The `cost_estimate` field on `TriageRecord` (optional nested object; absent when the framework cannot resolve the configured model_id to a known price entry)
 
 Renames or removals to any of these are breaking changes requiring a major version bump. Additions are minor bumps. Adding methods to the Protocol interfaces is a breaking change for any deployment with custom implementations.
 
@@ -198,6 +199,21 @@ The 0.7.0 release added the optional `correlation_id` field to TriageRecord for 
 7. The drift detection baseline was regenerated (the new records have correlation_id and declare 1.1.0); the drift checker's "always ignored" list was extended to include `correlation_id`.
 
 No migration code was needed because the change is purely additive: every 1.0.0 record is a valid 1.1.0 record except for the schema version stamp itself, and consumers reading older records validate them against the older schema.
+
+### Worked example: 1.1.0 -> 1.2.0 (Phase 6 SS3-A)
+
+The 0.8.0 release added the optional nested `cost_estimate` field to TriageRecord for LLM cost tracking. The migration:
+
+1. New schema file `schemas/output-contract-1.2.0.schema.json` was added alongside `output-contract-1.1.0.schema.json` and `output-contract-1.0.0.schema.json`. Earlier files were not modified.
+2. The new file added `cost_estimate` to `properties` as a `$ref` to a new `$defs/cost_estimate` definition. The cost_estimate object has five required inner fields (input_tokens, output_tokens, model_id, estimated_cost_usd, price_table_version) with `additionalProperties: false` to lock the inner shape. The outer `cost_estimate` is NOT in `required`, preserving backwards compatibility.
+3. The new file updated `output_schema_version` from `const: "1.1.0"` to `const: "1.2.0"`.
+4. `schemas/validate.py` `_OUTPUT_SCHEMA_FILES` dispatch was extended with `"1.2.0": "output-contract-1.2.0.schema.json"`. Three schemas are now in the dispatch (1.0.0, 1.1.0, 1.2.0).
+5. `agent/agent.py` bumped `OUTPUT_SCHEMA_VERSION` to `"1.2.0"`.
+6. The Pydantic `TriageRecord` model in `agent/output_models.py` gained an optional `cost_estimate: Optional[CostEstimate]` field. A new `CostEstimate` BaseModel was added with matching Pydantic validation (non-negative tokens, date-pattern on price_table_version, etc.).
+7. A new `pricing/` package was added with `ModelPriceTable`, `ModelPrice`, `PRICE_TABLE`, `PRICE_TABLE_VERSION`, `compute_cost`, and `lookup_price`. The agent's `_capture_cost_estimate` helper reads `result.usage` from the LLM call, looks up the model in the price table, and builds the CostEstimate (or returns None for unknown models, leaving cost_estimate absent on the record).
+8. The drift detection baseline was regenerated for 0.8.0; the drift checker's "always ignored" list was extended to include `cost_estimate` (per-run token usage and dollar figure, varies with prompt length, not a classification signal).
+
+The pattern is identical to the 1.0.0 -> 1.1.0 migration: additive nested optional field, new schema file alongside the old, new version stamp, validator dispatch extended. The pricing package is the substantive new infrastructure; the schema bump is the contract-level expression of it.
 
 ### What not to do
 

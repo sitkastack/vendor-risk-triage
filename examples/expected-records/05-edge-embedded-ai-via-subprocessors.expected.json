@@ -45,7 +45,7 @@
     "score": 0.71,
     "interpretation": "moderate"
   },
-  "output_schema_version": "1.1.0",
+  "output_schema_version": "1.2.0",
   "required_mitigations": [
     "Vendor must amend the submission to disclose Sift Science and Hugging Face as AI features (not just sub-processors), with feature-level decision_role and autonomy fields populated.",
     "Vendor must re-evaluate the EU AI Act self-classification in light of fraud scoring against customer data; minimum 'limited_risk' classification expected.",

@@ -223,6 +223,44 @@ class ConfidenceSignal(BaseModel):
         return self
 
 
+_PRICE_TABLE_VERSION_PATTERN: str = r"^\d{4}-\d{2}-\d{2}$"
+
+
+class CostEstimate(BaseModel):
+    """Best-effort dollar cost estimate for a triage operation.
+
+    Captures LLM token usage and the dollar figure computed against
+    a price table revision. Optional on TriageRecord; absent when
+    the framework cannot resolve the configured model_id to a known
+    price entry (FunctionModel and TestModel fixtures, or any model
+    not in the published price table).
+
+    The cost figure is a standard-rate estimate. Batch API discounts,
+    prompt caching, long-context surcharges, and regional uplifts are
+    not modeled. Deployments wanting precise cost data for billing
+    purposes should compute their own from the raw token counts plus
+    their negotiated provider rates.
+
+    Attributes:
+        input_tokens: Prompt tokens consumed (non-negative integer).
+        output_tokens: Completion tokens produced (non-negative integer).
+        model_id: PydanticAI-style provider:model identifier.
+        estimated_cost_usd: Dollar cost at standard rates, computed
+            from input_tokens + output_tokens against the price table
+            indicated by price_table_version.
+        price_table_version: Date string (YYYY-MM-DD) identifying the
+            price table revision used to compute the cost.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+    model_id: str = Field(min_length=1, max_length=128)
+    estimated_cost_usd: float = Field(ge=0.0)
+    price_table_version: str = Field(pattern=_PRICE_TABLE_VERSION_PATTERN)
+
+
 class TriageRecord(BaseModel):
     """The complete vendor risk triage record the agent writes for each decision.
 
@@ -306,6 +344,16 @@ class TriageRecord(BaseModel):
             "by the framework on each triage call (16-char lowercase "
             "hex). Optional in records produced by deployments that "
             "disable observability."
+        ),
+    )
+    cost_estimate: Optional[CostEstimate] = Field(
+        default=None,
+        description=(
+            "Best-effort dollar cost estimate for the LLM call that "
+            "produced this decision. Populated when the framework can "
+            "resolve the configured model to a known price entry; "
+            "absent for test fixtures (FunctionModel, TestModel) and "
+            "for models not in the published price table."
         ),
     )
 

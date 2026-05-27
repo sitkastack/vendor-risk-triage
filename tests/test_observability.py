@@ -64,7 +64,7 @@ def test_event_name_values_stable() -> None:
     """The public event names are stable as documented."""
     expected = {
         "agent.constructed", "triage.started", "triage.completed",
-        "llm.call.started", "llm.call.completed",
+        "llm.call.started", "llm.call.completed", "llm.call.cost_recorded",
         "retrieval.started", "retrieval.completed",
         "validation.started", "validation.completed",
         "drift.check.started", "drift.check.completed",

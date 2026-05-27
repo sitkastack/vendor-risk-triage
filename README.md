@@ -52,6 +52,8 @@ Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across 
 
 `observability/` provides structured event logging, metrics emission, and distributed tracing via Protocol-based sinks. Defaults are silent (no-op implementations); deployments wanting observability construct an `Observability` bundle with configured sinks and pass it to `TriageAgentConfig`. Twelve event names, ten metric names, and five span names are part of the public surface as of 0.7.0. The `[otel]` extra installs the OpenTelemetry tracer adapter for shipping spans to Honeycomb, Datadog, Jaeger, or any OTLP-compatible backend. See `docs/observability-guide.md` for Prometheus and StatsD adapter examples plus the correlation_id pattern for joining logs, metrics, and traces.
 
+`pricing/` holds the model price table the framework uses to attach dollar cost estimates to TriageRecords. As of 0.8.0, the published table covers 33 models across four providers (Anthropic, OpenAI, Google, Mistral) with per-million-token input and output rates plus source URLs and verification dates. The `ModelPriceTable` class wraps the table in a lookup interface; deployments can substitute a custom table (with negotiated enterprise rates) by constructing `ModelPriceTable(prices=...)`. Standard rates only - batch API discounts, prompt caching, long-context surcharges, and regional uplifts are not modeled, so cost estimates are upper bounds on real-world spend. The `cost_estimate` field on TriageRecord records input_tokens, output_tokens, model_id, estimated_cost_usd, and the price_table_version that produced the figure, so an auditor reviewing an old record can see which prices were in effect at decision time.
+
 ### Documentation
 
 The phase-by-phase design documents live in `docs/`:

@@ -25,7 +25,7 @@
     "score": 0.82,
     "interpretation": "high"
   },
-  "output_schema_version": "1.1.0",
+  "output_schema_version": "1.2.0",
   "required_mitigations": [
     "Verify vendor's PII non-retention claim through security validation function before contract renewal.",
     "Quarterly review of disclosed AI features for scope creep, particularly any movement toward customer_facing or regulated_decisions levels."
