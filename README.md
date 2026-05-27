@@ -87,6 +87,23 @@ pip install -e '.[dev]'
 
 Python 3.11 or later required.
 
+## CLI
+
+After installation, the `vrt` command-line tool is available with five subcommands:
+
+```bash
+vrt triage submission.json --output record.json   # run the agent on a submission
+vrt render record.json --output audit-pack.html   # render an audit pack HTML
+vrt drift                                         # check classification drift
+vrt corpus list                                   # list registered regulation corpora
+vrt corpus build nist-ai-rmf                      # build an IndexBundle
+vrt version                                       # print framework version + verify pyproject sync
+```
+
+Each subcommand supports `--help` for full flag documentation. The CLI is a thin wrapper over the Python API; deployments integrating the framework typically use the API directly. The CLI exists for demos, first-run experience, and operational scripting.
+
+Two invocation paths both work: the installed `vrt` console script, or `python -m cli`. The `vrt` command name and subcommand names are part of the framework's public surface; rename or remove is a breaking change per `docs/maintenance-workflow.md` section 1.
+
 ## Governance as code
 
 The framework's governance is partially executable, not just documented:

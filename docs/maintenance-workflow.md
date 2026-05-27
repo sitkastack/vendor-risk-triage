@@ -43,6 +43,12 @@ FRAMEWORK_VERSION: str = "0.6.0"
 
 Both `agent/agent.py` and `reporting/audit_pack.py` import the constant from `_version` rather than defining their own. To bump the version, edit `_version.py` and `pyproject.toml` together. CI verifies the two stay in sync via `scripts/check_version_sync.py`; the workflow step fails if they disagree.
 
+### CLI command compatibility
+
+The `vrt` console script and its five subcommands (`triage`, `render`, `drift`, `corpus`, `version`) are part of the framework's public surface as of `0.6.0`. Renaming or removing a subcommand is a breaking change requiring a major version bump. Adding a new subcommand or a new flag with sensible default is a minor bump. Adding a new positional argument to an existing subcommand is a breaking change unless the argument is optional with a backwards-compatible default.
+
+The CLI is invoked through two paths: the installed `vrt` console script (registered in `pyproject.toml` under `[project.scripts]`) and `python -m cli`. Both must work for the framework to be considered installable; the CI test `test_cli_main_module_runnable` exercises the latter, and the install verification step (`pip install -e .` followed by `vrt --version`) is part of the release checklist.
+
 ## 2. SYSTEM_PROMPT update procedure
 
 The `SYSTEM_PROMPT` constant in `agent/agent.py` shapes every classification the framework produces. Edits to it require disciplined process.
@@ -217,6 +223,7 @@ When cutting a versioned release:
 - [ ] 3-run test stability verified (`for i in 1 2 3; do python -m pytest 2>&1 | tail -1; done`)
 - [ ] No em-dashes in markdown documentation (CI-enforced)
 - [ ] `FRAMEWORK_VERSION` in `_version.py` matches `pyproject.toml` `version` (CI-enforced via `scripts/check_version_sync.py`)
+- [ ] Editable install works: `pip install -e .` succeeds, `vrt --version` prints the expected framework version
 - [ ] CHANGELOG entry written naming user-visible changes
 - [ ] Migration document written if schema major version bumps
 - [ ] Customization guide updated if `TriageAgentConfig` signature changed

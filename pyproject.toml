@@ -24,6 +24,17 @@ vector = [
     "sentence-transformers>=2.7.0,<3",
 ]
 
+[project.scripts]
+vrt = "cli.dispatcher:main"
+
+[tool.setuptools]
+# Explicit package list. Without this, setuptools' auto-discovery uses
+# the "src layout" assumption and fails to find the flat-layout packages
+# at the repo root. The framework intentionally uses flat layout
+# because it has multiple top-level packages and a top-level _version.py.
+packages = ["agent", "cli", "eval", "eval.attacks", "eval.calibration", "eval.citations", "eval.drift", "eval.judge", "ingestion", "reporting", "retrieval", "scripts"]
+py-modules = ["_version"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
