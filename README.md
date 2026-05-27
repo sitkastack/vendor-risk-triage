@@ -149,11 +149,25 @@ If you spot something that is wrong or oversimplified, opening an issue is the m
 
 ## Examples
 
+### Contract examples
+
 The `examples/` directory contains illustrative JSON files used to verify integrations against the Phase 1 contracts. Every example validates against its schema in CI on every push and PR.
 
 - `examples/input-submission.example.json` is a valid input submission against the Input Contract schema
 - `examples/triage-record.example.json` is a valid triage record paired with the input example, against the Output Contract schema
 - `examples/validation-error.example.json` is the shape of a structured validation error response from the intake validator
+
+### Demo scenarios
+
+Five hand-curated end-to-end scenarios spanning all four risk tiers plus an edge case live under `examples/submissions/` and `examples/expected-records/`. The scenarios mix jurisdictions (OSFI lead, SOX, EU AI Act, cross-jurisdiction) and demonstrate the framework's behavior on realistic vendor risk reviews:
+
+- **01-tier1-internal-productivity**: Internal note-taking AI with no PII, productivity-only role. Approve.
+- **02-tier2-customer-service-chatbot**: Customer-facing ticket triage with human-confirmed routing. Conditional approve with explicit mitigations.
+- **03-tier3-document-ocr-loans**: Document OCR for KYC/loans with cross-border AI sub-processor. Escalate to senior review.
+- **04-tier4-autonomous-credit-decisioning**: Fully autonomous credit decisioning system. Reject.
+- **05-edge-embedded-ai-via-subprocessors**: Disclosure inconsistency: vendor claims minimal AI, sub-processors reveal otherwise. Escalate.
+
+The full dataset is in `eval/datasets/demo-scenarios.jsonl` with each scenario carrying its submission, expected record, and reviewer notes explaining what audit-readiness behavior the scenario is meant to demonstrate.
 
 ## License
 

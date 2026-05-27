@@ -1,0 +1,97 @@
+{
+  "vendor_id": "demo-vendor-005-globalpayflow",
+  "vendor_name": "GlobalPayFlow Payment Operations Ltd.",
+  "jurisdiction": "EU",
+  "primary_contact": {
+    "name": "Anika Voss",
+    "email": "anika.voss@example-bank.eu"
+  },
+  "vendor_classification": "hybrid",
+  "ai_usage_level": "operational_decisions",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "soc2_report",
+      "reference": "vault://vendor-docs/globalpayflow/soc2-typeII-2025-10.pdf",
+      "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+    },
+    {
+      "artifact_type": "security_questionnaire",
+      "reference": "vault://vendor-docs/globalpayflow/sig-full-2025-10.xlsx"
+    },
+    {
+      "artifact_type": "data_processing_agreement",
+      "reference": "vault://vendor-docs/globalpayflow/dpa-eu-uk-2025-08-signed.pdf"
+    },
+    {
+      "artifact_type": "privacy_policy",
+      "reference": "vault://vendor-docs/globalpayflow/privacy-policy-2026-01.pdf"
+    }
+  ],
+  "submission_timestamp": "2026-05-24T11:20:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Payment reconciliation",
+      "description": "Rule-based matching of inbound payments to outstanding invoices. The vendor characterizes this as automation, not AI.",
+      "decision_role": "operational",
+      "autonomy": "human_confirmed"
+    }
+  ],
+  "model_providers": [],
+  "training_data_sources": [],
+  "pii_processing_claims": {
+    "processes_pii": true,
+    "categories": [
+      "Beneficiary name and account",
+      "Payer name and account",
+      "Transaction amounts",
+      "Reference text (may incidentally include PII)"
+    ],
+    "handling_notes": "Vendor retains transaction records for 10 years per EU AML retention requirements. Reference text is processed for matching but not analyzed for content beyond regex-based identifier extraction (according to vendor)."
+  },
+  "data_residency": {
+    "regions": ["EU", "UK"],
+    "conditions": "EU and UK customer data stored exclusively in EU data centers (Frankfurt and Dublin). UK data subject to UK GDPR; EU data subject to GDPR with standard contractual clauses for any incidental processor access."
+  },
+  "compliance_attestations": [
+    {
+      "framework": "SOC 2",
+      "attestation_type": "Type II",
+      "date": "2025-10-08",
+      "validity_period": "12 months"
+    },
+    {
+      "framework": "ISO 27001",
+      "attestation_type": "certification",
+      "date": "2024-11-15",
+      "validity_period": "3 years"
+    }
+  ],
+  "ai_act_self_classification": "minimal_risk",
+  "vendor_disclosed_subprocessors": [
+    {
+      "name": "Microsoft Azure (EU-North, EU-West)",
+      "role": "Application hosting and data storage",
+      "location": "EU",
+      "processes_customer_data": true
+    },
+    {
+      "name": "Stripe Payments Europe Ltd.",
+      "role": "Card and ACH payment processing infrastructure",
+      "location": "EU",
+      "processes_customer_data": true
+    },
+    {
+      "name": "Sift Science Inc.",
+      "role": "Fraud scoring and risk decisioning via machine learning models",
+      "location": "US",
+      "processes_customer_data": true
+    },
+    {
+      "name": "Hugging Face Inc.",
+      "role": "Hosted inference endpoint for transaction description classifier (sentence-transformers model)",
+      "location": "US",
+      "processes_customer_data": true
+    }
+  ]
+}

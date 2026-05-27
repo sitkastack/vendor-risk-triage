@@ -1,0 +1,100 @@
+{
+  "vendor_id": "demo-vendor-003-textlens",
+  "vendor_name": "TextLens AI Inc.",
+  "jurisdiction": "CA",
+  "primary_contact": {
+    "name": "Priya Anand",
+    "email": "priya.anand@example-bank.ca"
+  },
+  "vendor_classification": "SaaS",
+  "ai_usage_level": "operational_decisions",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "soc2_report",
+      "reference": "vault://vendor-docs/textlens/soc2-typeII-2025-09.pdf",
+      "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000003"
+    },
+    {
+      "artifact_type": "model_card",
+      "reference": "vault://vendor-docs/textlens/model-card-vision-ocr-2026-q1.pdf"
+    },
+    {
+      "artifact_type": "data_processing_agreement",
+      "reference": "vault://vendor-docs/textlens/dpa-2025-12-signed.pdf"
+    },
+    {
+      "artifact_type": "architecture_document",
+      "reference": "vault://vendor-docs/textlens/architecture-overview-2026.pdf"
+    }
+  ],
+  "submission_timestamp": "2026-05-22T09:30:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Identity document OCR",
+      "description": "Vision-language model extracts structured fields (name, date of birth, document number, address) from scanned identity documents uploaded via HTTPS API. Returns JSON. Used in customer onboarding KYC flow.",
+      "decision_role": "operational",
+      "autonomy": "human_confirmed"
+    },
+    {
+      "feature_name": "Loan document classification",
+      "description": "Classifies uploaded loan-application documents (pay stub, bank statement, tax return, employment letter) and extracts relevant financial fields. Output feeds into the human underwriter's review queue.",
+      "decision_role": "operational",
+      "autonomy": "human_confirmed"
+    },
+    {
+      "feature_name": "Confidence-flagged escalation",
+      "description": "When the model's per-field extraction confidence falls below a configurable threshold, the document is flagged for manual review rather than auto-processed.",
+      "decision_role": "supporting",
+      "autonomy": "human_confirmed"
+    }
+  ],
+  "model_providers": [
+    "Meta (open-weight Llama 3.2 Vision base)",
+    "OpenAI (fallback OCR for low-confidence pages)"
+  ],
+  "training_data_sources": [
+    "Vendor's proprietary synthetic financial documents (no real customer data)",
+    "Publicly licensed DocBank corpus (CC BY 4.0)",
+    "Vendor's customer-consented production samples (opt-in, anonymized)"
+  ],
+  "pii_processing_claims": {
+    "processes_pii": true,
+    "categories": [
+      "Full name",
+      "Date of birth",
+      "Government ID numbers (SIN, passport)",
+      "Address",
+      "Financial identifiers (account numbers, employer info)",
+      "Document image content (which may include other PII)"
+    ],
+    "handling_notes": "Documents retained for 7 days for retry/replay then purged. Embeddings retained for 30 days for model improvement only if the customer opts in (default: opt-out). No PII used for cross-customer training. OpenAI fallback API calls send only the low-confidence document region with PII redaction applied where the model's first-pass extraction identified PII fields."
+  },
+  "data_residency": {
+    "regions": ["US", "CA"],
+    "conditions": "Primary processing in AWS us-east-1 (Virginia). Canadian customer data optionally pinned to ca-central-1 under enterprise tier (deploying organization is on enterprise tier). Cross-border transfer to US Anthropic and OpenAI APIs governed by contractual data-localization clauses and customer's recorded consent."
+  },
+  "compliance_attestations": [
+    {
+      "framework": "SOC 2",
+      "attestation_type": "Type II",
+      "date": "2025-09-15",
+      "validity_period": "12 months"
+    }
+  ],
+  "ai_act_self_classification": "not_applicable",
+  "vendor_disclosed_subprocessors": [
+    {
+      "name": "Amazon Web Services (us-east-1, ca-central-1)",
+      "role": "Application hosting, primary document storage",
+      "location": "US",
+      "processes_customer_data": true
+    },
+    {
+      "name": "OpenAI Inc.",
+      "role": "Fallback OCR API for low-confidence vision-model output",
+      "location": "US",
+      "processes_customer_data": true
+    }
+  ]
+}

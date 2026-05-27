@@ -1,0 +1,39 @@
+{
+  "decision_id": "demo-d-001-notecraft-2026-05-20",
+  "decision_timestamp": "2026-05-20T14:25:00Z",
+  "input_submission_id": "demo-vendor-001-notecraft",
+  "input_schema_version": "1.0.0",
+  "agent_version": "vrt-agent-v0.6.0-demo-prompt-69ef583c6dbe",
+  "risk_tier": "tier_1_low",
+  "recommended_disposition": "approve",
+  "classification_rationale": "Vendor's AI is used exclusively for productivity assistance (sentence completion in internal notes) with no decisioning role and no customer-facing exposure. Disclosed features are human-initiated and human-confirmed throughout. Vendor states no PII processing in AI context and no customer-content retention beyond a 24-hour sync cache. SOC 2 Type II attestation current. The use case sits at the productivity-only floor of the risk taxonomy and does not implicate the regulated-decision provisions of OSFI E-23 or NIST AI RMF's high-risk categories.",
+  "evidence_cited": [
+    {
+      "input_field_reference": "$.ai_usage_level",
+      "reasoning": "Reported as 'productivity_only', the lowest tier in the AI usage taxonomy. Places the vendor at the Tier 1 floor per docs/phase-0/01-risk-classification.md."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[0].autonomy",
+      "reasoning": "Meeting note autocomplete is 'human_initiated' (the user types and the model suggests completions in response). No autonomous action; no decisioning."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[1].decision_role",
+      "reasoning": "Smart formatting is 'none' for decision role: it applies markdown to plain text, no semantic decision."
+    },
+    {
+      "input_field_reference": "$.pii_processing_claims.processes_pii",
+      "reasoning": "Vendor explicitly states no PII processing. Combined with the productivity-only scope, this removes the primary risk drivers (data residency exposure, model training on customer content) that would elevate the tier."
+    },
+    {
+      "input_field_reference": "$.compliance_attestations[0]",
+      "reasoning": "Current SOC 2 Type II attestation (dated 2025-08-15, 12 month validity) satisfies the baseline security control attestation expected for Tier 1 SaaS vendors."
+    }
+  ],
+  "confidence_signal": {
+    "score": 0.92,
+    "interpretation": "high"
+  },
+  "output_schema_version": "1.0.0",
+  "review_interval_days": 365,
+  "regulatory_framework_tags": ["OSFI_E_23"]
+}

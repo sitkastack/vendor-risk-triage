@@ -1,0 +1,100 @@
+{
+  "vendor_id": "demo-vendor-002-converseai",
+  "vendor_name": "ConverseAI Customer Operations Ltd.",
+  "jurisdiction": "CA-ON",
+  "primary_contact": {
+    "name": "Marcus Lam",
+    "email": "marcus.lam@example-bank.ca"
+  },
+  "vendor_classification": "SaaS",
+  "ai_usage_level": "customer_facing",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "soc2_report",
+      "reference": "vault://vendor-docs/converseai/soc2-typeII-2025-11.pdf",
+      "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+    },
+    {
+      "artifact_type": "model_card",
+      "reference": "vault://vendor-docs/converseai/model-card-customerlm-v3.pdf"
+    },
+    {
+      "artifact_type": "data_processing_agreement",
+      "reference": "vault://vendor-docs/converseai/dpa-2025-09-signed.pdf"
+    }
+  ],
+  "submission_timestamp": "2026-05-21T10:15:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Customer service chat triage",
+      "description": "Reads inbound customer messages and routes them to the appropriate human agent queue (billing, technical, escalation). Does not respond to the customer directly; the human agent handles all customer-facing communication.",
+      "decision_role": "operational",
+      "autonomy": "human_confirmed"
+    },
+    {
+      "feature_name": "Sentiment flagging",
+      "description": "Flags incoming messages where the model detects elevated frustration, distress, or potential complaint escalation, surfaces them in a priority queue for senior agents.",
+      "decision_role": "supporting",
+      "autonomy": "human_confirmed"
+    },
+    {
+      "feature_name": "Suggested reply drafts",
+      "description": "Generates suggested response drafts based on the customer message and past resolution patterns. The human agent reviews, edits, or rejects each draft before sending.",
+      "decision_role": "supporting",
+      "autonomy": "human_confirmed"
+    }
+  ],
+  "model_providers": [
+    "Anthropic"
+  ],
+  "training_data_sources": [
+    "Vendor's anonymized historical customer service transcripts (with customer consent per DPA)",
+    "Public conversational datasets (DailyDialog, OpenAssistant)"
+  ],
+  "pii_processing_claims": {
+    "processes_pii": true,
+    "categories": [
+      "Customer name",
+      "Account number (masked in model context)",
+      "Contact information (email, phone)",
+      "Message content (which may incidentally include PII)"
+    ],
+    "handling_notes": "Customer-provided PII in message content is processed in real time and not retained for model fine-tuning. Account numbers are masked before reaching the model context. Conversation transcripts are retained for 90 days for quality assurance and then purged."
+  },
+  "data_residency": {
+    "regions": [
+      "CA",
+      "US"
+    ],
+    "conditions": "Customer data stored in Canadian region (CA-CENTRAL-1). Model inference via Anthropic API goes through US data centers; data processing addendum confirms no training use and no cross-border data retention beyond inference window."
+  },
+  "compliance_attestations": [
+    {
+      "framework": "SOC 2",
+      "attestation_type": "Type II",
+      "date": "2025-11-03",
+      "validity_period": "12 months"
+    },
+    {
+      "framework": "ISO 27001",
+      "attestation_type": "certification",
+      "date": "2025-06-12",
+      "validity_period": "3 years"
+    }
+  ],
+  "vendor_disclosed_subprocessors": [
+    {
+      "name": "Anthropic PBC",
+      "role": "Foundation model inference provider (Claude family)",
+      "location": "US",
+      "processes_customer_data": true
+    },
+    {
+      "name": "Amazon Web Services (CA-CENTRAL-1)",
+      "role": "Customer data storage and application hosting",
+      "location": "CA-QC",
+      "processes_customer_data": true
+    }
+  ]
+}

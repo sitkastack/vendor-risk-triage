@@ -1,0 +1,88 @@
+{
+  "vendor_id": "demo-vendor-004-autocredit",
+  "vendor_name": "AutoCredit Decisioning Systems Inc.",
+  "jurisdiction": "US",
+  "primary_contact": {
+    "name": "Jennifer Park",
+    "email": "jennifer.park@example-bank.com"
+  },
+  "vendor_classification": "model_provider",
+  "ai_usage_level": "regulated_decisions",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "soc2_report",
+      "reference": "vault://vendor-docs/autocredit/soc2-typeII-2025-06.pdf",
+      "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000004"
+    },
+    {
+      "artifact_type": "model_card",
+      "reference": "vault://vendor-docs/autocredit/model-card-credit-decisioning-v7.pdf"
+    },
+    {
+      "artifact_type": "architecture_document",
+      "reference": "vault://vendor-docs/autocredit/architecture-2025.pdf"
+    }
+  ],
+  "submission_timestamp": "2026-05-23T16:45:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Automated credit decisioning",
+      "description": "Gradient-boosted decision-tree ensemble plus a neural feature extractor produce a binary credit decision (approve / decline) and a numeric risk score for personal loan applications between $5,000 and $50,000. The vendor recommends autonomous deployment for applications below $25,000; the deploying organization may set its own threshold.",
+      "decision_role": "regulated",
+      "autonomy": "autonomous"
+    },
+    {
+      "feature_name": "Adverse action reasoning",
+      "description": "When the model declines an application, it produces up to four ranked reason codes (e.g., 'insufficient credit history', 'high debt-to-income ratio') intended to satisfy adverse-action notice requirements under ECOA and Reg B.",
+      "decision_role": "regulated",
+      "autonomy": "autonomous"
+    }
+  ],
+  "model_providers": ["Vendor proprietary (no third-party LLM)"],
+  "training_data_sources": [
+    "Vendor's historical credit-decisioning labeled dataset (3 million applications, 2018-2024)",
+    "Public credit bureau aggregated statistics (TransUnion, Equifax)"
+  ],
+  "pii_processing_claims": {
+    "processes_pii": true,
+    "categories": [
+      "Full name",
+      "Social Security Number",
+      "Date of birth",
+      "Address (current and prior)",
+      "Employment information",
+      "Income",
+      "Credit bureau pull (full credit report)",
+      "Bank account balance and transaction history (with consumer consent)"
+    ],
+    "handling_notes": "Vendor retains decision records for 7 years per Reg B requirements. PII is encrypted at rest and in transit. The vendor states model fairness was audited against ECOA-protected classes in 2024; the audit report is available under NDA on request."
+  },
+  "data_residency": {
+    "regions": ["US"],
+    "conditions": "All processing in US data centers. No cross-border transfers. Vendor does not currently support deployments outside US jurisdiction; for Canadian deployments, model would need to be re-trained on Canadian credit bureau data and re-audited."
+  },
+  "compliance_attestations": [
+    {
+      "framework": "SOC 2",
+      "attestation_type": "Type II",
+      "date": "2025-06-20",
+      "validity_period": "12 months"
+    }
+  ],
+  "ai_act_self_classification": "high_risk",
+  "vendor_disclosed_subprocessors": [
+    {
+      "name": "Equifax Inc.",
+      "role": "Credit bureau data provider",
+      "location": "US",
+      "processes_customer_data": true
+    },
+    {
+      "name": "Amazon Web Services (us-east-1, us-west-2)",
+      "role": "Application hosting and model serving",
+      "location": "US",
+      "processes_customer_data": true
+    }
+  ]
+}

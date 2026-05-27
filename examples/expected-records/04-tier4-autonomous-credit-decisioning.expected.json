@@ -1,0 +1,51 @@
+{
+  "decision_id": "demo-d-004-autocredit-2026-05-23",
+  "decision_timestamp": "2026-05-23T16:48:00Z",
+  "input_submission_id": "demo-vendor-004-autocredit",
+  "input_schema_version": "1.0.0",
+  "agent_version": "vrt-agent-v0.6.0-demo-prompt-69ef583c6dbe",
+  "risk_tier": "tier_4_high",
+  "recommended_disposition": "reject",
+  "classification_rationale": "Vendor offers a fully autonomous credit decisioning system intended for direct deployment on personal loan applications, with the vendor recommending autonomous deployment up to $25,000. The use case is a regulated decision in every relevant framework: it materially affects consumers, triggers ECOA adverse-action notice requirements, falls under EU AI Act Annex III (creditworthiness assessment is explicitly enumerated as high-risk), and would trigger OSFI E-23 model-risk-management requirements for any Canadian deployment. Two material defects support rejection rather than escalation: (1) the vendor's only model-fairness audit is from 2024, predating the 2025 model version 7 release referenced in the model card, and is available only under NDA, which prevents the deploying organization from satisfying its own independent-validation obligation under OSFI E-23; (2) the vendor states the model would require re-training and re-auditing for Canadian deployment but provides no commitment, scope, or timeline for that work. Rejection does not foreclose future engagement; it directs the vendor to address these gaps before re-submission.",
+  "evidence_cited": [
+    {
+      "input_field_reference": "$.ai_usage_level",
+      "reasoning": "Reported as 'regulated_decisions', the highest tier in the AI usage taxonomy. Anchors the classification at Tier 4 absent unusual mitigation."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[0].autonomy",
+      "reasoning": "Automated credit decisioning is 'autonomous'. The vendor explicitly recommends autonomous deployment for applications below $25,000. Autonomous regulated decisioning is the Tier 4 threshold."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[0].description",
+      "reasoning": "Binary approve/decline decisions on $5K-$50K personal loans. Materiality to consumers is direct and significant. Falls within EU AI Act Annex III 5(b) (creditworthiness assessment) and within OSFI E-23 model-risk-management scope for any Canadian deployment."
+    },
+    {
+      "input_field_reference": "$.documentation_artifacts",
+      "reasoning": "No independent model-fairness audit report is provided in the submission. The model card references a 2024 audit available only under NDA. For a Tier 4 regulated-decisions vendor, the deploying organization needs an independent validation it can place in its own audit file."
+    },
+    {
+      "input_field_reference": "$.pii_processing_claims.categories",
+      "reasoning": "Vendor processes SSN, full credit reports, and consented bank transaction history. This is the most sensitive PII category in the framework. Combined with autonomous decisioning, it triggers heightened scrutiny under every applicable regulatory framework."
+    },
+    {
+      "input_field_reference": "$.data_residency.conditions",
+      "reasoning": "Vendor states model cannot currently support Canadian deployment without re-training on Canadian credit bureau data and re-auditing. No timeline or commitment provided. This makes cross-border use of the existing model untenable for any Canadian-incorporated deploying organization."
+    },
+    {
+      "input_field_reference": "$.ai_act_self_classification",
+      "reasoning": "Vendor self-classifies as 'high_risk' under EU AI Act. Self-classification is honest and consistent with the Annex III scope; it does not by itself mitigate the underlying risk."
+    },
+    {
+      "input_field_reference": "$.compliance_attestations",
+      "reasoning": "SOC 2 Type II current (2025-06). For Tier 4 regulated decisioning, SOC 2 is necessary but not sufficient; expected attestations for this class also include independent model validation, fairness audit, and (for Canadian deployment) OSFI E-23 attestation pathway."
+    }
+  ],
+  "confidence_signal": {
+    "score": 0.88,
+    "interpretation": "high"
+  },
+  "output_schema_version": "1.0.0",
+  "review_interval_days": 1,
+  "regulatory_framework_tags": ["EU_AI_Act_Annex_III", "OSFI_E_23", "NIST_AI_RMF", "SR_11_7"]
+}

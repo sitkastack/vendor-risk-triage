@@ -1,0 +1,59 @@
+{
+  "vendor_id": "demo-vendor-001-notecraft",
+  "vendor_name": "NoteCraft Productivity Inc.",
+  "jurisdiction": "CA-ON",
+  "primary_contact": {
+    "name": "Dana Reyes",
+    "email": "dana.reyes@example-bank.ca"
+  },
+  "vendor_classification": "SaaS",
+  "ai_usage_level": "productivity_only",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "soc2_report",
+      "reference": "vault://vendor-docs/notecraft/soc2-typeII-2025-08.pdf",
+      "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "artifact_type": "security_questionnaire",
+      "reference": "vault://vendor-docs/notecraft/sig-lite-2025-09.xlsx"
+    }
+  ],
+  "submission_timestamp": "2026-05-20T14:22:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Meeting note autocomplete",
+      "description": "Suggests sentence completions as employees draft internal meeting notes. Suggestions are non-binding; the user accepts, edits, or rejects each. No content is generated unprompted.",
+      "decision_role": "supporting",
+      "autonomy": "human_initiated"
+    },
+    {
+      "feature_name": "Smart formatting",
+      "description": "Detects bulleted lists, headings, and action items in plain-text notes and applies markdown formatting. Pure text-structure inference; no semantic content.",
+      "decision_role": "none",
+      "autonomy": "human_confirmed"
+    }
+  ],
+  "model_providers": ["OpenAI"],
+  "training_data_sources": [
+    "Vendor's own synthetic productivity-text corpus",
+    "Common Crawl English-language subset (publicly available, no customer data)"
+  ],
+  "pii_processing_claims": {
+    "processes_pii": false,
+    "handling_notes": "Vendor states that note content is not retained server-side beyond a 24-hour rolling cache for sync; no model training on customer content. Customer notes never leave the customer's tenant."
+  },
+  "data_residency": {
+    "regions": ["CA", "US"],
+    "conditions": "Canadian customer data stored in CA-CENTRAL-1; US OpenAI API calls go through Microsoft Azure with EU/US data localization clauses; no transfers outside North America."
+  },
+  "compliance_attestations": [
+    {
+      "framework": "SOC 2",
+      "attestation_type": "Type II",
+      "date": "2025-08-15",
+      "validity_period": "12 months"
+    }
+  ]
+}

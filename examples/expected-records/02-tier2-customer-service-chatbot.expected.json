@@ -1,0 +1,53 @@
+{
+  "decision_id": "demo-d-002-converseai-2026-05-21",
+  "decision_timestamp": "2026-05-21T10:18:00Z",
+  "input_submission_id": "demo-vendor-002-converseai",
+  "input_schema_version": "1.0.0",
+  "agent_version": "vrt-agent-v0.6.0-demo-prompt-69ef583c6dbe",
+  "risk_tier": "tier_2_moderate",
+  "recommended_disposition": "conditional_approve",
+  "classification_rationale": "Vendor operates a customer-facing AI ticket-triage system that processes customer-supplied message content (including incidental PII) but routes only to human agents who handle all customer-facing communication. The AI does not respond to customers directly and operates under human-confirmed autonomy. Combined with current SOC 2 Type II and ISO 27001 attestations, a signed DPA, and disclosed sub-processor inventory, the use case fits Tier 2 moderate. Conditional approval is warranted because the model receives PII in real time and the 90-day transcript retention requires periodic verification of stated controls.",
+  "evidence_cited": [
+    {
+      "input_field_reference": "$.ai_usage_level",
+      "reasoning": "Reported as 'customer_facing', which under the risk taxonomy places the vendor in the Tier 2-3 band. The 'human_confirmed' autonomy on all features pulls the classification toward Tier 2 rather than Tier 3."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[0].autonomy",
+      "reasoning": "Ticket triage is 'human_confirmed': the AI routes to a human agent queue, but the human agent makes the customer-facing decision. The human-in-the-loop precondition holds."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[2].description",
+      "reasoning": "Suggested reply drafts are reviewed and edited by human agents before sending. The model does not autonomously communicate with customers."
+    },
+    {
+      "input_field_reference": "$.pii_processing_claims.categories",
+      "reasoning": "Customer name, contact information, and incidental PII in message content are processed in real time. Vendor states no model fine-tuning on customer content. The PII flow elevates the tier from Tier 1 productivity to Tier 2 moderate."
+    },
+    {
+      "input_field_reference": "$.pii_processing_claims.handling_notes",
+      "reasoning": "Vendor states 90-day transcript retention and PII masking on account numbers. The 90-day window introduces a re-review trigger; transcript handling controls warrant verification."
+    },
+    {
+      "input_field_reference": "$.vendor_disclosed_subprocessors[0]",
+      "reasoning": "Anthropic disclosed as sub-processor for model inference, with stated no-training-use commitment in DPA. The disclosure satisfies the model-supply-chain transparency expectation for Tier 2."
+    },
+    {
+      "input_field_reference": "$.compliance_attestations",
+      "reasoning": "SOC 2 Type II (2025-11) and ISO 27001 (2025-06) both current. Both attestations are expected at this tier; absence of either would force escalation."
+    }
+  ],
+  "confidence_signal": {
+    "score": 0.78,
+    "interpretation": "moderate"
+  },
+  "output_schema_version": "1.0.0",
+  "required_mitigations": [
+    "Verify the no-training-use commitment against the actual Anthropic DPA at contract renewal.",
+    "Quarterly review of transcript-retention controls (90-day purge) and PII-masking efficacy on account numbers.",
+    "Monitor for scope expansion from human-confirmed reply drafts toward customer-facing autonomous response, which would re-trigger Tier 3 review.",
+    "Confirm Canadian-region data pinning is actually applied for in-scope tenants (vendor states the option exists; deploying-organization configuration must enable it)."
+  ],
+  "review_interval_days": 180,
+  "regulatory_framework_tags": ["OSFI_E_23"]
+}

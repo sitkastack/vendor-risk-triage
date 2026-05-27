@@ -1,0 +1,59 @@
+{
+  "decision_id": "demo-d-005-globalpayflow-2026-05-24",
+  "decision_timestamp": "2026-05-24T11:23:00Z",
+  "input_submission_id": "demo-vendor-005-globalpayflow",
+  "input_schema_version": "1.0.0",
+  "agent_version": "vrt-agent-v0.6.0-demo-prompt-69ef583c6dbe",
+  "risk_tier": "tier_3_elevated",
+  "recommended_disposition": "escalate_senior_review",
+  "classification_rationale": "Vendor self-discloses only rule-based payment reconciliation and reports no AI model providers, no training data sources, and self-classifies as 'minimal_risk' under EU AI Act. However, the disclosed sub-processor list includes two AI-supplying services: Sift Science (machine-learning fraud scoring) and Hugging Face (hosted inference endpoint for a transaction-description classifier). Both process customer data per the disclosure. This is a self-classification inconsistency: the vendor's AI use is real and material but is concealed within the sub-processor relationship rather than disclosed as a vendor feature. Escalation is required to resolve the disclosure gap before any classification decision can be relied upon. The recommendation is not a finding against the vendor; it is a finding that the submission as constructed is insufficient for a decision.",
+  "evidence_cited": [
+    {
+      "input_field_reference": "$.ai_features_disclosed",
+      "reasoning": "Single feature disclosed (payment reconciliation, characterized as rule-based automation rather than AI). The disclosure list does not include the AI capabilities supplied by Sift Science or Hugging Face, both of which process customer data per the sub-processor section."
+    },
+    {
+      "input_field_reference": "$.model_providers",
+      "reasoning": "Empty. Inconsistent with the Hugging Face sub-processor relationship, which is by definition a hosted model inference endpoint. The empty field reflects how the vendor frames the relationship, not the actual technical reality."
+    },
+    {
+      "input_field_reference": "$.training_data_sources",
+      "reasoning": "Empty. Consistent with the vendor not training its own models, but does not address the upstream training data of the Sift Science or Hugging Face models the vendor relies on."
+    },
+    {
+      "input_field_reference": "$.ai_act_self_classification",
+      "reasoning": "Vendor self-classifies as 'minimal_risk'. Self-classification is inconsistent with the actual AI footprint surfaced by the sub-processor disclosure. Fraud scoring against customer data is at minimum a 'limited_risk' use case under EU AI Act transparency obligations and may rise to 'high_risk' depending on the autonomy of fraud decisions."
+    },
+    {
+      "input_field_reference": "$.vendor_disclosed_subprocessors[2]",
+      "reasoning": "Sift Science disclosed as US-based subprocessor providing 'fraud scoring and risk decisioning via machine learning models', processing customer data. This is the AI use that is missing from the AI features list and that elevates the classification."
+    },
+    {
+      "input_field_reference": "$.vendor_disclosed_subprocessors[3]",
+      "reasoning": "Hugging Face disclosed as US-based subprocessor providing 'hosted inference endpoint for transaction description classifier (sentence-transformers model)', processing customer data. Confirms a second AI processing path the vendor did not disclose at the feature level."
+    },
+    {
+      "input_field_reference": "$.pii_processing_claims.categories",
+      "reasoning": "Beneficiary and payer names, account identifiers, transaction amounts, and reference text. The Sift Science and Hugging Face flows process this data in models, which the vendor's PII handling notes do not address."
+    },
+    {
+      "input_field_reference": "$.data_residency.regions",
+      "reasoning": "Vendor states EU and UK residency only. Sift Science and Hugging Face sub-processors are both US-based and process customer data, creating an undisclosed cross-border transfer that conflicts with the stated residency."
+    }
+  ],
+  "confidence_signal": {
+    "score": 0.71,
+    "interpretation": "moderate"
+  },
+  "output_schema_version": "1.0.0",
+  "required_mitigations": [
+    "Vendor must amend the submission to disclose Sift Science and Hugging Face as AI features (not just sub-processors), with feature-level decision_role and autonomy fields populated.",
+    "Vendor must re-evaluate the EU AI Act self-classification in light of fraud scoring against customer data; minimum 'limited_risk' classification expected.",
+    "Vendor must amend data residency disclosure to reflect cross-border AI processing through US sub-processors, with SCCs or equivalent transfer mechanism documented for EU customer data.",
+    "Re-submission with corrected disclosures triggers new triage; the resulting record supersedes this one via the supersedes field.",
+    "Until re-submission is received, no contract execution; if existing usage exists, suspend AI-touching workflows pending clarification."
+  ],
+  "accountable_owner": "Chief Privacy Officer or designated Data Protection Officer (EU/UK scope)",
+  "review_interval_days": 30,
+  "regulatory_framework_tags": ["EU_AI_Act_Annex_III", "NIST_AI_RMF"]
+}

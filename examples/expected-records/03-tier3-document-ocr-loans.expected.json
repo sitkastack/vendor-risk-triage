@@ -1,0 +1,55 @@
+{
+  "decision_id": "demo-d-003-textlens-2026-05-22",
+  "decision_timestamp": "2026-05-22T09:33:00Z",
+  "input_submission_id": "demo-vendor-003-textlens",
+  "input_schema_version": "1.0.0",
+  "agent_version": "vrt-agent-v0.6.0-demo-prompt-69ef583c6dbe",
+  "risk_tier": "tier_3_elevated",
+  "recommended_disposition": "escalate_senior_review",
+  "classification_rationale": "Vendor uses AI for operational decisioning on KYC and loan-document intake, processing high-sensitivity PII (SIN, government IDs, financial records) through both proprietary vision models and a third-party fallback (OpenAI). Cross-border data flow (CA customer data routed to US OpenAI on low-confidence pages) plus the absence of a current ISO 27001 attestation together raise the tier from operational Tier 2 to elevated Tier 3. Senior review is recommended over conditional approval because the OpenAI fallback path is the most material risk and warrants explicit decisioning by an accountable owner rather than a delegated approval.",
+  "evidence_cited": [
+    {
+      "input_field_reference": "$.ai_usage_level",
+      "reasoning": "Reported as 'operational_decisions'. Combined with the high-sensitivity PII categories disclosed below, this sits at the Tier 3 boundary rather than Tier 2."
+    },
+    {
+      "input_field_reference": "$.pii_processing_claims.categories",
+      "reasoning": "Categories include SIN and government ID numbers (high-sensitivity per docs/phase-1 PII taxonomy). For a Canadian deploying organization, SIN handling brings PIPEDA and OSFI E-23 sensitivity expectations into scope."
+    },
+    {
+      "input_field_reference": "$.ai_features_disclosed[0].description",
+      "reasoning": "Identity document OCR feeds the KYC flow. KYC is a regulated decision under both AML guidance and OSFI E-23 onboarding controls; the AI is in the operational pre-decision step but materially shapes the human decision."
+    },
+    {
+      "input_field_reference": "$.model_providers",
+      "reasoning": "OpenAI listed as fallback for low-confidence pages. This is a cross-border AI sub-processor receiving PII (redacted on first-pass detection, but vision OCR cannot guarantee complete pre-redaction). The fallback path is the most material risk in the submission."
+    },
+    {
+      "input_field_reference": "$.data_residency.conditions",
+      "reasoning": "Canadian customer data pinned to ca-central-1 in vendor's primary path, but OpenAI fallback calls go to US. The conditional-residency arrangement requires explicit consent capture and audit trail."
+    },
+    {
+      "input_field_reference": "$.compliance_attestations",
+      "reasoning": "SOC 2 Type II is current (2025-09) but no ISO 27001 listed. For a vendor in the KYC pre-decisioning path, ISO 27001 is the expected control attestation; absence is a gap, not a blocker."
+    },
+    {
+      "input_field_reference": "$.vendor_disclosed_subprocessors[1]",
+      "reasoning": "OpenAI Inc. disclosed as US-based subprocessor processing customer data. Disclosure is correct; the underlying flow is the elevated-risk path."
+    }
+  ],
+  "confidence_signal": {
+    "score": 0.74,
+    "interpretation": "moderate"
+  },
+  "output_schema_version": "1.0.0",
+  "required_mitigations": [
+    "Obtain explicit DPA addendum from TextLens covering OpenAI fallback path: data minimization, no-retention guarantee, and PII-redaction verification before contract execution.",
+    "Require ISO 27001 certification (or equivalent control attestation) within 12 months as a condition of continued use.",
+    "Configure enterprise-tier ca-central-1 pinning for primary OCR path; obtain written confirmation that the configuration is applied.",
+    "Implement runtime monitoring on the OpenAI fallback trigger rate; investigate if fallback exceeds 5% of documents (indicates pre-redaction is ineffective).",
+    "Quarterly review of customer-consented production samples used for model improvement (the opt-in mechanism) to confirm opt-out rate and audit consent records."
+  ],
+  "accountable_owner": "Chief Risk Officer or designated Senior Vendor Risk Manager",
+  "review_interval_days": 90,
+  "regulatory_framework_tags": ["OSFI_E_23", "NIST_AI_RMF"]
+}
