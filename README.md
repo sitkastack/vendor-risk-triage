@@ -59,6 +59,7 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/phase-2/` covers system architecture, trust boundaries, the full threat model (T-AI1 through T-AI8), and the architecture decision records
 - `docs/customization-guide.md` walks through customizing the framework for a specific deploying organization: intake checklist, configuration decision tree, extension points, a worked example, and anti-patterns to refuse
 - `docs/audit-log-shipping.md` specifies the envelope format for shipping TriageRecords to SIEMs, archives, and event buses with content-hash integrity verification and replay semantics
+- `docs/maintenance-workflow.md` documents the procedures for maintainers: version bumps, SYSTEM_PROMPT updates, corpus refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist
 - `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale
 

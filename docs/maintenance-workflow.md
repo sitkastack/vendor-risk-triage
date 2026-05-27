@@ -1,0 +1,258 @@
+# Maintenance workflow
+
+This document is for maintainers of the framework itself. It covers the procedures for evolving the framework's code and contracts: version bumps, SYSTEM_PROMPT updates, corpus refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist.
+
+This is not a contributor guide (see `CONTRIBUTING.md`) and not a deployment guide (see `docs/customization-guide.md`). It assumes you have commit access to the main repository and you are deciding what changes to merge and when to cut a release.
+
+## 1. Release cadence and version semantics
+
+The framework follows semantic versioning on `FRAMEWORK_VERSION`. The current value is `0.6.0`.
+
+**Major bump (`X.0.0`)** is reserved for:
+
+- Breaking changes to `schemas/input-contract-*.schema.json` or `schemas/output-contract-*.schema.json`
+- Breaking changes to the `AuditLogEnvelope` wire format (any change to canonical-bytes rules, hash algorithm, required fields)
+- Removal of a publicly-exported function or class
+- Renames that downstream code would have to update for
+
+**Minor bump (`0.X.0`)** is reserved for:
+
+- New publicly-exported functionality (a new module, a new helper, a new flag)
+- New optional schema fields (added via `extension_schema_version`, not by modifying the base)
+- New SYSTEM_PROMPT content that materially changes classification behavior (even if technically backwards-compatible at the API surface)
+- A new corpus added to the default manifest
+- A new regulatory framework tag enumerated in the schema
+
+**Patch bump (`0.0.X`)** is for:
+
+- Bug fixes that do not change classification behavior
+- Documentation-only changes
+- Test additions
+- Internal refactoring with no API change
+- Dependency version pins that do not affect behavior
+
+**Pre-1.0 note.** While the framework is pre-1.0, the major version stays at 0 and breaking changes ride in minor bumps. The 1.0 release will signal API stability commitments. Aim is mid-2027.
+
+### Where FRAMEWORK_VERSION lives
+
+The constant is currently defined in two places:
+
+- `agent/agent.py` (module-level `FRAMEWORK_VERSION: str = "0.6.0"`)
+- `reporting/audit_pack.py` (module-level `FRAMEWORK_VERSION: str = "0.6.0"`)
+
+Both must be updated together on any version bump. This duplication is a known issue queued for cleanup; until then, the maintenance procedure is "update both, run the tests, commit." A future patch will consolidate into a single `_version.py` source of truth.
+
+The `pyproject.toml` `version` field is presently out of sync (`0.2.0`); on the next release, sync it to match `FRAMEWORK_VERSION` and add a CI check that fails when the two diverge.
+
+## 2. SYSTEM_PROMPT update procedure
+
+The `SYSTEM_PROMPT` constant in `agent/agent.py` shapes every classification the framework produces. Edits to it require disciplined process.
+
+### Step-by-step
+
+1. **Edit the prompt.** Make the change in `agent/agent.py`. The `SYSTEM_PROMPT_HASH` constant is computed from the prompt bytes; do not edit it manually.
+
+2. **Run the test suite.** `python -m pytest`. The existing tests verify schema conformance, demo scenario classification, agent_version composition, and citation/calibration/judge behavior. They catch structural breakage; they do not catch classification drift on the demo scenarios.
+
+3. **Run the drift check.** `python scripts/check_drift.py`. This compares current decisions against the checked-in baseline.
+
+4. **Interpret the drift report.** Three outcomes:
+   - No drift detected: ship the prompt edit as a documentation or stylistic change. No version bump needed unless the edit was substantive.
+   - Soft drift only (rationale text, mitigation text, confidence within ±0.05): if the drift is intentional, regenerate the baseline (`python scripts/check_drift.py --update-baseline`) and commit the new baseline file alongside the prompt change. If the drift is unintentional, revise the prompt.
+   - Hard drift (tier, disposition, evidence count, framework tags): investigate before accepting. A hard drift on a demo scenario means the prompt edit changed the framework's classification of a curated example. If intentional, regenerate the baseline and clearly document the reasoning in the commit message; consider whether this warrants a minor version bump rather than patch.
+
+5. **Decide on version bump.** Editorial or clarifying prompt changes with no drift: patch bump optional. Prompt changes that produce intentional drift: minor bump required. A SYSTEM_PROMPT edit that materially changes classification behavior on hand-curated scenarios is a behavior change for downstream consumers.
+
+6. **Commit.** Stage the prompt edit, the baseline (if regenerated), the version bumps (if any). Sign off per the DCO. Run `git push origin main`.
+
+7. **CI verifies.** The CI pipeline runs the drift check; if you regenerated the baseline locally but didn't commit it, CI fails. If you bumped FRAMEWORK_VERSION in one location but not the other, CI does not currently catch it; double-check manually.
+
+### What not to do
+
+Do not auto-regenerate the baseline as part of every commit. The bypass mechanism exists to make accepting drift an intentional decision, not a silent one.
+
+Do not bump SYSTEM_PROMPT_HASH manually. The constant is computed in `agent/agent.py`; touching it directly breaks the audit-traceability guarantee that the recorded `agent_version` corresponds to the prompt that produced the decision.
+
+## 3. Corpus refresh procedure
+
+When a regulation updates (OSFI releases a revised E-23, the EU AI Act gets an implementing act, NIST publishes a new AI RMF revision), the framework's corpus needs to refresh.
+
+### Step-by-step
+
+1. **Verify license.** Before ingesting a new or updated document, confirm the framework has the right to redistribute or, where it does not, that the deploying organization holds the license. ISO standards, certain industry frameworks, and paywalled publications are not redistributable. Document the licensing status in `docs/corpus-manifest.md`.
+
+2. **Source the authoritative document.** Use the regulator's official publication URL where possible. For draft or non-final guidance, prefer the comment-period draft over informal summaries. Record the source URL and access date in the manifest entry.
+
+3. **Compute the SHA-256.** Pin the document by content hash so subsequent runs verify against the same bytes. The hash goes in `tests/integration/corpora_cache.py`.
+
+4. **Rebuild the IndexBundle.** Run the corpus build script for that regulation (see `scripts/build_corpus_bundles.py` for the pattern). The output is a `*.bundle.tgz` file containing chunks, manifest, and optional embeddings.
+
+5. **Update the corpus manifest.** Edit `docs/corpus-manifest.md` to record: the document name, source URL, access date, version (where the regulator versions explicitly), SHA-256, and license status.
+
+6. **Run the test suite.** A corpus refresh changes retrieval results, which can change classifications. Run the full test suite (`pytest`) and the drift check (`scripts/check_drift.py`).
+
+7. **Interpret drift.** If the refresh produces hard drift on demo scenarios, that's usually a real signal - the new regulation says something different about a category the demo scenario was classified under. Investigate per-scenario; the right answer is sometimes "the demo scenario's expected classification needs to update because the regulatory expectation changed."
+
+8. **Decide version bump.** A corpus refresh is at minimum a patch bump (the framework now retrieves from a newer source). If the refresh changes classifications materially, minor bump.
+
+9. **Commit and push.** Include the manifest update, the corpus build script changes if any, the regenerated baseline (if drift was accepted), and the version bump.
+
+### Notes on government corpora
+
+OSFI documents are Crown copyright; redistribution is restricted. The framework does not ship OSFI E-23 bundles; deployments source these locally. Document this in your engagement intake (see `docs/customization-guide.md` section 1.5).
+
+NIST documents are US public domain; safe to redistribute.
+
+EU AI Act text is published by the European Union; redistribution is permitted with attribution.
+
+Industry standards (ISO, IEEE) are licensed; only the deploying organization with a valid license can use them. The framework does not ingest these directly.
+
+## 4. Model dependency upgrade
+
+The framework's runtime depends on PydanticAI, which itself depends on provider SDKs (Anthropic, OpenAI, Google, etc.). Upgrades happen for security patches, new model versions, and new features.
+
+### Step-by-step
+
+1. **Read the upstream changelog.** PydanticAI's release notes name breaking changes. Provider SDKs (especially Anthropic and OpenAI) sometimes ship breaking changes in their Python clients.
+
+2. **Bump the dependency pin.** Edit `pyproject.toml`. The framework pins minor-version-range dependencies (e.g., `pydantic-ai>=0.0.X,<0.1.0`) to avoid surprise breakage on transitive updates. Tighten the pin if the upstream is in flux.
+
+3. **Run the test suite.** The agent's core test path (`tests/test_agent_core.py`) exercises TriageAgent construction with TestModel and FunctionModel. PydanticAI API changes surface here.
+
+4. **Run the drift check.** A model-SDK upgrade should not change classifications on the deterministic test double, but if PydanticAI changes how it serializes ToolCallPart payloads or how it composes the agent prompt, drift can surface.
+
+5. **Run the real-LLM integration tests if you have an API key.** The `real_llm` marker gates these; they cost money per run. Use them when:
+   - The upgrade is a model version change (Claude Sonnet 4 → 4.5)
+   - The upgrade changes how the agent constructs its tool calls
+   - You're about to cut a release that customers will adopt
+
+6. **Update the customization guide if needed.** If the upgrade changes the recommended `TriageAgentConfig` shape (new provider parameter, deprecated argument), section 2.6 of `docs/customization-guide.md` needs to update.
+
+7. **Decide version bump.** Internal dependency upgrades with no API change: patch. Dependency upgrades that change `TriageAgentConfig` signature or default behavior: minor.
+
+### Model version upgrades specifically
+
+When Anthropic releases a new Claude model (or any provider releases a new model), update `DEFAULT_MODEL` in `agent/agent.py` thoughtfully:
+
+- Test the new model against the framework's classification quality (run the real-LLM integration tests against your demo scenarios; compare classifications and confidence).
+- Decide whether the change is "default upgrade" (every new deployment gets the new model) or "opt-in" (existing deployments keep the old default; new deployments choose).
+- Bump FRAMEWORK_VERSION. A model default change is a minor bump because deployments running on defaults experience the change.
+
+The `agent_version` string baked into every TriageRecord captures the model identifier, so an auditor can grep records produced by a specific model version. This is the safety net for model-default changes.
+
+## 5. Schema evolution
+
+The framework has three versioned schemas: input contract (`schemas/input-contract-1.0.0.schema.json`), output contract (`schemas/output-contract-1.0.0.schema.json`), and audit log envelope (`ENVELOPE_SCHEMA_VERSION` constant in `reporting/audit_log.py`). All are pinned at `1.0.0`. No v2 is planned.
+
+### When to bump major
+
+- A previously-required field becomes optional or vice versa
+- A field's type changes (string → object, integer → string)
+- A field is renamed
+- A required field is added (existing records produced under the prior schema would not validate against the new one)
+- The canonical-bytes serialization rules for the envelope change
+
+### When to bump minor
+
+- A new optional field is added at the base level
+- An enumerated value is added to a field that previously had a closed enum
+- A constraint is relaxed (max length increases, regex broadens)
+
+### Migration story
+
+When a major bump becomes necessary, the framework ships a migration document at `docs/schema-migration-X-to-Y.md` describing field-by-field changes and supplying a transformation function. The transformation lives in `schemas/migrations/` (does not exist today; create it on first migration).
+
+The output schema is the harder migration: existing TriageRecords in customer archives must remain valid under their original schema version. The framework keeps prior schema versions in `schemas/output-contract-1.0.0.schema.json`, `schemas/output-contract-2.0.0.schema.json`, and so on. The renderer in `reporting/audit_pack.py` reads the record's `output_schema_version` field and dispatches accordingly. The agent only produces records under the latest schema.
+
+The audit log envelope is the simpler case: a major bump signals to consumers that they must upgrade before parsing newer envelopes; consumers already check `envelope_schema_version` and refuse incompatible majors with a clear error (`parse_jsonl_line` raises `AuditLogParseError` with a "incompatible" message).
+
+### What not to do
+
+Do not modify a `1.0.0` schema file in place. Once `1.0.0` is published, it is frozen. Modifications go in a new file with a new version. The framework code dispatches by the version string in the record.
+
+Do not skip the migration document for a major bump. The framework's customers depend on being able to read records they produced last year.
+
+## 6. Security advisory response
+
+When a dependency CVE lands or a vulnerability is reported against the framework directly, the response procedure is:
+
+### For dependency CVEs
+
+1. **Assess scope.** Does the CVE affect a code path the framework actually exercises? Many CVEs in transitive dependencies are theoretical for this framework's usage pattern. Read the advisory; check the affected module.
+
+2. **Check for a patched version.** Most CVEs have a fix in a subsequent minor or patch release. Bump the dependency pin to the patched version.
+
+3. **Run the test suite and drift check.** The dependency upgrade procedure in section 4 applies.
+
+4. **Cut a patch release.** Security-only patches get a patch version bump and a `SECURITY-ADVISORY.md` note in the release.
+
+5. **Notify downstream.** Add a `SECURITY.md` advisory if one does not exist; update it with the CVE reference and the patched version range.
+
+### For framework vulnerabilities
+
+If someone reports a vulnerability in the framework itself (via `SECURITY.md` reporting path or a private channel):
+
+1. **Acknowledge within 48 hours.** Respond to the reporter with confirmation of receipt and a CVSS estimate.
+
+2. **Privately develop the fix.** Use a private branch or fork. The vulnerability should not be discussed in public until a patched release is available.
+
+3. **Coordinate disclosure.** If the vulnerability has CVE-level severity (CVSS 7.0+), file a CVE through GitHub's advisory mechanism. The reporter typically gets credit unless they request anonymity.
+
+4. **Release the patched version.** Patch bump, with the CVE referenced in the release notes.
+
+5. **Publish the advisory.** After the patched version is released, publish the public advisory naming the affected versions, the CVSS score, and the fix.
+
+### What not to do
+
+Do not silently fix a vulnerability without a disclosure. Customers running affected versions need to know to upgrade.
+
+Do not delay a security patch to bundle it with feature work. Security patches ship on their own.
+
+## 7. Release checklist
+
+When cutting a versioned release:
+
+- [ ] All tests pass on main (`python -m pytest`)
+- [ ] Coverage threshold met (currently 95% minimum, currently at 100%)
+- [ ] Drift check passes (`python scripts/check_drift.py`)
+- [ ] 3-run test stability verified (`for i in 1 2 3; do python -m pytest 2>&1 | tail -1; done`)
+- [ ] No em-dashes in markdown documentation (CI-enforced)
+- [ ] `FRAMEWORK_VERSION` consistent in `agent/agent.py` and `reporting/audit_pack.py`
+- [ ] `pyproject.toml` `version` matches `FRAMEWORK_VERSION` (currently out of sync; fix on next release)
+- [ ] CHANGELOG entry written naming user-visible changes
+- [ ] Migration document written if schema major version bumps
+- [ ] Customization guide updated if `TriageAgentConfig` signature changed
+- [ ] Maintenance workflow doc updated if any procedure here changed
+- [ ] `git tag v{FRAMEWORK_VERSION}` and pushed
+- [ ] GitHub release published with release notes
+- [ ] Downstream consumers notified for breaking changes (via release notes, mailing list, or direct contact for known deployments)
+
+### Release cadence guidance
+
+Patch releases ship as needed (security, bugs, doc fixes). No minimum cadence.
+
+Minor releases ship roughly monthly during active development, more often when shipping a coordinated set of customer-facing changes.
+
+Major releases ship rarely. The 1.0 target is mid-2027; until then, minor bumps carry breaking changes with clear migration notes.
+
+### What goes in a release
+
+- All commits since the prior release tag
+- A release notes file naming user-visible changes, grouped by category (added, changed, fixed, deprecated, removed, security)
+- The baseline file as it currently exists on main (the drift check passes against it)
+- Updated corpus bundles if applicable
+- Updated schema files if a new major version is being introduced (prior versions stay in the repo for backwards compatibility)
+
+### What stays out of a release
+
+- Speculative features behind feature flags
+- Internal refactoring not yet exposed in the public API
+- Pre-release model upgrades that haven't been validated against the integration test suite
+- Documentation drafts not yet ready for external consumption
+
+## Notes on known issues to fix during routine maintenance
+
+- `FRAMEWORK_VERSION` is duplicated in `agent/agent.py` and `reporting/audit_pack.py`. Consolidate to a single `_version.py` source of truth on the next minor release.
+- `pyproject.toml` `version = "0.2.0"` is stale. Sync to `FRAMEWORK_VERSION` and add a CI check that fails on divergence.
+- The drift check uses the deterministic FunctionModel; real-LLM drift is a Phase 6 deferral. When Phase 6 ships, this maintenance procedure gains a step for running the real-LLM drift mode on prompt changes.
+- The continuous monitoring infrastructure (separate sitkastack consulting tooling) is out of scope for this framework's maintenance procedures. Maintainers of that tooling work from their own runbook.
