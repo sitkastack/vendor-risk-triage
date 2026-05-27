@@ -64,7 +64,8 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/customization-guide.md` walks through customizing the framework for a specific deploying organization: intake checklist, configuration decision tree, extension points, a worked example, and anti-patterns to refuse
 - `docs/audit-log-shipping.md` specifies the envelope format for shipping TriageRecords to SIEMs, archives, and event buses with content-hash integrity verification and replay semantics
 - `docs/observability-guide.md` covers structured event logging, metrics emission, distributed tracing via OpenTelemetry, and correlating signals via correlation_id. The guide includes Prometheus and StatsD adapter examples for deployments wanting metrics; the OpenTelemetry tracer adapter ships in the framework's `[otel]` extra.
-- `docs/maintenance-workflow.md` documents the procedures for maintainers: version bumps, SYSTEM_PROMPT updates, corpus refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist
+- `docs/cost-tracking-guide.md` covers the `cost_estimate` field on `TriageRecord`, the published price table (what's covered, what's not, how to refresh, how to override with negotiated enterprise rates), the `--cost-budget` CLI flag and its limitations, and the patterns for answering customer pricing conversations.
+- `docs/maintenance-workflow.md` documents the procedures for maintainers: version bumps, SYSTEM_PROMPT updates, corpus refreshes, price table refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist
 - `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale
 

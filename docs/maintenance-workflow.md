@@ -127,6 +127,43 @@ EU AI Act text is published by the European Union; redistribution is permitted w
 
 Industry standards (ISO, IEEE) are licensed; only the deploying organization with a valid license can use them. The framework does not ingest these directly.
 
+## 3a. Price table refresh procedure
+
+The framework ships an LLM pricing table at `pricing/pricing.py` covering all four major providers' lineups (33 models as of 0.8.0). Providers change prices, launch new models, and deprecate old ones; the maintainer commits to a roughly quarterly refresh cadence, with out-of-band updates when a major provider announces meaningful changes (a new generation, a large discount, a deprecation).
+
+### When to refresh
+
+Trigger a refresh in any of these cases:
+
+- A provider has announced a new model that deployments will plausibly route through (judgment call; usually means the model is at least covering 30 days post-launch and has public pricing).
+- A provider has announced a meaningful price change (>20% in either direction, or a structural change like adding a long-context tier).
+- A provider has announced an end-of-life date for a model in the table.
+- The last `last_verified_date` on any entry is more than 90 days old.
+- A deployment reports a discrepancy between the table and their actual invoice.
+
+### Step-by-step
+
+1. **Open `pricing/pricing.py`** and identify entries that need updating. For each provider, visit their official pricing page (URLs are in the `_<PROVIDER>_SOURCE` constants at module level). Cross-check against at least one reputable third-party tracker (CloudZero, Finout, PE Collective, pricepertoken, aipricing.guru, margindash, devtk.ai, tokenmix).
+2. **Update existing entries** whose prices have changed. Each modified entry records the new `input_price_per_mtok` and/or `output_price_per_mtok`, an updated `last_verified_date` (today's date in YYYY-MM-DD format), and any `notes` about new pricing variants or deprecation timelines.
+3. **Add new model entries** the provider has launched since the last refresh. Match the PydanticAI naming convention (`provider:model-version`, e.g., `anthropic:claude-sonnet-4-6`). Include `notes` flagging if the model is the current flagship, a legacy variant, or has a pricing variant the framework does not model (long-context, batch-only, etc.).
+4. **Remove deprecated model entries** the provider has fully sunset. Be conservative: a "deprecating soon" model stays in the table until the actual end-of-life date passes. When removed, also remove or update any tests asserting on the entry (typically in `tests/test_pricing.py`).
+5. **Resolve source conflicts** if two reputable sources disagree on a price. Document the conflict in the entry's `notes` field with both figures and the sources. Choose the more widely cited figure or the value closer to the legacy entry from the same provider. Flag the entry for re-verification in 30-60 days.
+6. **Bump `PRICE_TABLE_VERSION`** in `pricing/pricing.py` to today's date in YYYY-MM-DD format. This is the constant that every TriageRecord's `cost_estimate.price_table_version` field will record from now on.
+7. **Update `docs/cost-tracking-guide.md`** if the structural pricing patterns have changed (a new provider added, a new pricing dimension modeled, the source-conflict policy refined).
+8. **Bump `FRAMEWORK_VERSION` patch number** (e.g., 0.8.1 → 0.8.2). Price table refreshes are patch bumps because they do not change schema, behavior of existing call sites, or public API. Bump pyproject.toml to match.
+9. **Run the test suite**. The tests in `tests/test_pricing.py` include specific assertions about flagship prices (e.g., `test_anthropic_current_flagship_pricing`); update those if the flagship's price has changed. The total model count assertion (`test_price_table_has_thirty_three_models`) needs updating if models were added or removed.
+10. **Regenerate the demo scenarios baseline** if any cost data has changed in those records. Currently the demo scenarios use FunctionModel which is unknown to the price table, so the baseline records carry no cost data, and no regeneration is needed for table-only changes.
+11. **Verify drift check passes**. Cost data lives in the drift checker's "always ignored" list as of 0.8.0, so price table changes do not trigger drift. If they ever do, the maintenance doc's schema evolution section is the right place to look first.
+12. **Commit with a clear message** following the existing pattern: `chore(pricing): refresh price table for YYYY-MM-DD verification`. List the providers updated, the models added/removed, and any structural pricing changes (new tiers, new pricing variants) in the body.
+
+### What not to do
+
+Do not bump `PRICE_TABLE_VERSION` without re-verifying every entry. The version date is the maintainer's commitment to having done the work; bumping without verifying breaks the audit chain.
+
+Do not model batch API discounts, prompt caching, long-context surcharges, or regional uplifts without a formal proposal. The framework's "standard rates only" policy is explicit in the `pricing/pricing.py` docstring and in the cost tracking guide; changing it is a behavior change that warrants discussion across multiple deployments first.
+
+Do not silently change the table's structure. Adding fields to `ModelPrice` (e.g., a batch_input_price_per_mtok) is a backwards-compatible change but still warrants a minor version bump and updates to the cost tracking guide.
+
 ## 4. Model dependency upgrade
 
 The framework's runtime depends on PydanticAI, which itself depends on provider SDKs (Anthropic, OpenAI, Google, etc.). Upgrades happen for security patches, new model versions, and new features.

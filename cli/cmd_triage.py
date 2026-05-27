@@ -14,6 +14,10 @@ Usage::
     # Override the model
     vrt triage submission.json --model openai:gpt-4o
 
+    # Refuse the call if estimated upper-bound cost exceeds budget.
+    # --cost-budget requires --max-output-tokens to be specified.
+    vrt triage submission.json --cost-budget 0.50 --max-output-tokens 8192
+
 The submission JSON file must conform to the input contract
 (``schemas/input-contract-1.0.0.schema.json``). The output, when
 saved, conforms to the output contract.
@@ -22,9 +26,11 @@ Exit codes:
 
 - ``0``: triage completed successfully
 - ``1``: input validation failed (submission JSON malformed or
-  missing required fields), or the agent raised an error
+  missing required fields), or the agent raised an error, or the
+  cost budget gate refused the call
 - ``2``: setup error (file not found, model not configured, missing
-  API key with no clear remediation)
+  API key with no clear remediation, --cost-budget without
+  --max-output-tokens)
 """
 from __future__ import annotations
 
@@ -75,6 +81,35 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
             "'openai:gpt-4o'."
         ),
     )
+    parser.add_argument(
+        "--cost-budget",
+        type=float,
+        default=None,
+        dest="cost_budget",
+        metavar="DOLLARS",
+        help=(
+            "Maximum allowed cost for this LLM call in USD. Refuses "
+            "the call if the upper-bound cost estimate (input tokens "
+            "+ max output tokens at standard rates) exceeds the "
+            "budget. Requires --max-output-tokens to be specified. "
+            "Estimate uses a character-based heuristic (~4 chars per "
+            "token) for input tokens and the published price table "
+            "for dollar conversion."
+        ),
+    )
+    parser.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=None,
+        dest="max_output_tokens",
+        metavar="N",
+        help=(
+            "Maximum output tokens the LLM call can produce. Required "
+            "when --cost-budget is set; ignored otherwise. The exact "
+            "value depends on the configured PydanticAI model's "
+            "max_tokens setting (typically 4096 or 8192)."
+        ),
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -106,6 +141,36 @@ def run(args: argparse.Namespace) -> int:
         )
         return 1
 
+    # Validate budget-gate flag pairing before doing anything expensive.
+    # The check itself runs after agent construction (so we have the
+    # model resolved), but the flag-pairing errors should surface
+    # immediately.
+    if args.cost_budget is not None:
+        if args.max_output_tokens is None:
+            print(
+                "ERROR: --cost-budget requires --max-output-tokens to "
+                "be specified. Provide both flags or remove "
+                "--cost-budget. The budget gate needs the max output "
+                "token count to compute an upper bound on the LLM "
+                "call's cost.",
+                file=sys.stderr,
+            )
+            return 2
+        if args.cost_budget < 0:
+            print(
+                f"ERROR: --cost-budget must be non-negative; "
+                f"got {args.cost_budget}",
+                file=sys.stderr,
+            )
+            return 2
+        if args.max_output_tokens < 1:
+            print(
+                f"ERROR: --max-output-tokens must be at least 1; "
+                f"got {args.max_output_tokens}",
+                file=sys.stderr,
+            )
+            return 2
+
     # Build the agent. If the user supplied a real-LLM model and there's
     # no API key, surface a clear error rather than a stack trace.
     config_kwargs: dict[str, Any] = {}
@@ -129,6 +194,30 @@ def run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # Budget gate: now that we have the resolved model_id, estimate the
+    # LLM call's upper-bound cost and refuse to proceed if it exceeds
+    # the budget. The estimate uses a character-based heuristic for
+    # input tokens and the user-supplied max_output_tokens; the gate
+    # is conservative by design (overestimates rather than
+    # underestimates).
+    if args.cost_budget is not None:
+        from agent.agent import _format_user_prompt
+        from pricing import check_budget
+        prompt_text = _format_user_prompt(submission, None, None)
+        model_id = str(agent._config.model)
+        result = check_budget(
+            model_id=model_id,
+            prompt=prompt_text,
+            max_output_tokens=args.max_output_tokens,
+            budget_usd=args.cost_budget,
+        )
+        if not result.allowed:
+            print(
+                f"ERROR: cost budget check failed.\n  {result.reason}",
+                file=sys.stderr,
+            )
+            return 1
 
     start = time.time()
     try:

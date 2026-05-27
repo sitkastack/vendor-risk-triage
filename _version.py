@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.8.0"
+FRAMEWORK_VERSION: str = "0.8.1"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,19 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.8.1 (sub-system 7B, Phase 6 SS3-B): cost budget gate. Adds
+  ``--cost-budget DOLLARS`` and ``--max-output-tokens N`` flags to
+  ``vrt triage``. The flags must be specified together; the gate
+  computes an upper-bound cost estimate (input tokens via a 4-
+  chars-per-token heuristic + max output tokens at standard rates
+  from the published price table) and refuses calls projected to
+  exceed budget. Unknown models refuse rather than proceed without
+  enforcement. New ``pricing/estimation.py`` module exposes
+  ``count_input_tokens_heuristic``, ``estimate_upper_bound_cost``,
+  ``check_budget``, and the ``BudgetCheck`` dataclass for use by
+  the CLI and by deployments wanting programmatic budget
+  enforcement. Patch bump: additive CLI flag, no schema change, no
+  TriageRecord change.
 - 0.8.0 (sub-system 7, Phase 6 SS3-A): cost tracking infrastructure.
   New ``pricing`` package with ``ModelPriceTable`` covering all four
   major providers' lineups (33 models: Anthropic, OpenAI, Google,
