@@ -46,7 +46,12 @@ class VectorIndex:
             print(chunk.chunk_id, score)
     """
 
-    def __init__(self, chunks: list[Chunk], embedder: Embedder) -> None:
+    def __init__(
+        self,
+        chunks: list[Chunk],
+        embedder: Embedder,
+        precomputed_embeddings: Optional[np.ndarray] = None,
+    ) -> None:
         """Build the dense index.
 
         Args:
@@ -55,9 +60,22 @@ class VectorIndex:
                 at construction; the same embedder must be used for
                 all subsequent queries (the index does not store the
                 embedder reference; the user retains it).
+            precomputed_embeddings: Optional pre-computed (N, D) array
+                matching ``len(chunks)`` rows in chunk order. When
+                supplied, the constructor skips the embed() call. Use
+                this with ``IndexBundle.load`` to avoid re-embedding on
+                cold start. The dtype is coerced to float32 to match
+                the framework convention.
+
+                Caller responsibility: the embeddings must have been
+                produced by an embedder compatible with the load-time
+                embedder. ``IndexBundle.load`` enforces identity by
+                default; callers using this kwarg outside the bundle
+                path should verify compatibility themselves.
 
         Raises:
-            ValueError: If chunks is empty.
+            ValueError: If chunks is empty, or precomputed_embeddings
+                shape disagrees with ``(len(chunks), embedder.dimension)``.
         """
         if not chunks:
             raise ValueError(
@@ -67,16 +85,27 @@ class VectorIndex:
         self._chunks: list[Chunk] = list(chunks)
         self._embedder: Embedder = embedder
         self._dimension: int = embedder.dimension
-        # Embed all chunks at construction. For very large corpora this
-        # is the slow step; the framework does not stream because the
-        # index is in-memory anyway (size = N * D * 4 bytes).
-        chunk_texts = [c.text for c in self._chunks]
-        self._embeddings: np.ndarray = embedder.embed(chunk_texts)
-        if self._embeddings.shape != (len(chunks), self._dimension):
-            raise ValueError(
-                f"embedder returned shape {self._embeddings.shape}, "
-                f"expected ({len(chunks)}, {self._dimension})"
+        if precomputed_embeddings is not None:
+            if precomputed_embeddings.shape != (len(chunks), self._dimension):
+                raise ValueError(
+                    f"precomputed_embeddings shape "
+                    f"{precomputed_embeddings.shape} does not match "
+                    f"({len(chunks)}, {self._dimension})"
+                )
+            self._embeddings: np.ndarray = precomputed_embeddings.astype(
+                np.float32, copy=False
             )
+        else:
+            # Embed all chunks at construction. For very large corpora this
+            # is the slow step; the framework does not stream because the
+            # index is in-memory anyway (size = N * D * 4 bytes).
+            chunk_texts = [c.text for c in self._chunks]
+            self._embeddings = embedder.embed(chunk_texts)
+            if self._embeddings.shape != (len(chunks), self._dimension):
+                raise ValueError(
+                    f"embedder returned shape {self._embeddings.shape}, "
+                    f"expected ({len(chunks)}, {self._dimension})"
+                )
 
     @property
     def chunk_count(self) -> int:

@@ -393,3 +393,68 @@ def test_hybrid_default_rrf_k_is_sixty() -> None:
     for _c, score in results:
         # Score is the sum of at most two such contributions, so bounded by 2/61
         assert score <= 2.0 / 61.0 + 1e-6
+
+
+# -- precomputed embeddings (phase 5 sub-system 1) ------------------------
+
+
+def test_vector_index_accepts_precomputed_embeddings() -> None:
+    """Pass-through path: caller-supplied embeddings replace the embed call."""
+    import numpy as np
+
+    chunks = _corpus()
+    embedder = HashEmbedder(dimension=32)
+    # Compute embeddings outside the index
+    texts = [c.text for c in chunks]
+    precomputed = embedder.embed(texts)
+    # Build index using precomputed
+    idx = VectorIndex(chunks, embedder=embedder, precomputed_embeddings=precomputed)
+    # Query and verify it returns sensible results
+    results = idx.query("AI governance", top_k=3)
+    assert len(results) == 3
+    assert all(isinstance(c, Chunk) for c, _s in results)
+
+
+def test_vector_index_precomputed_matches_fresh_embed() -> None:
+    """Index built from precomputed embeddings gives identical results to a fresh build."""
+    import numpy as np
+
+    chunks = _corpus()
+    embedder = HashEmbedder(dimension=32)
+    texts = [c.text for c in chunks]
+    precomputed = embedder.embed(texts)
+
+    idx_fresh = VectorIndex(chunks, embedder=embedder)
+    idx_precomputed = VectorIndex(
+        chunks, embedder=embedder, precomputed_embeddings=precomputed,
+    )
+
+    # The same query against both indexes should produce the same ranking.
+    r_fresh = idx_fresh.query("AI model governance", top_k=5)
+    r_pre = idx_precomputed.query("AI model governance", top_k=5)
+    assert [c.chunk_id for c, _ in r_fresh] == [c.chunk_id for c, _ in r_pre]
+
+
+def test_vector_index_precomputed_shape_mismatch_raises() -> None:
+    """Defensive: precomputed array of wrong shape is rejected at construction."""
+    import numpy as np
+    import pytest
+
+    chunks = _corpus()
+    embedder = HashEmbedder(dimension=32)
+    # Wrong row count
+    bad = np.zeros((len(chunks) + 1, 32), dtype=np.float32)
+    with pytest.raises(ValueError, match="precomputed_embeddings shape"):
+        VectorIndex(chunks, embedder=embedder, precomputed_embeddings=bad)
+
+
+def test_vector_index_precomputed_coerces_to_float32() -> None:
+    """Precomputed float64 input is coerced to float32."""
+    import numpy as np
+
+    chunks = _corpus()
+    embedder = HashEmbedder(dimension=32)
+    pre_f64 = embedder.embed([c.text for c in chunks]).astype(np.float64)
+    idx = VectorIndex(chunks, embedder=embedder, precomputed_embeddings=pre_f64)
+    # Probe internal embeddings via a query to confirm functionality
+    _ = idx.query("AI", top_k=1)

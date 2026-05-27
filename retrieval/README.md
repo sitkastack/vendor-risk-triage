@@ -239,6 +239,88 @@ pip install 'sitkastack-vrt[vector]'
 Without the extra, `HashEmbedder` works but semantic retrieval does
 not.
 
+## Persistent index bundles (Phase 5)
+
+Building the BM25 and vector indexes from raw PDFs on every process start is wasteful. BM25 itself is fast, but running 600+ chunks through `SentenceTransformerEmbedder` takes ~30 seconds. `IndexBundle` solves this: build once, save to disk, load fast on every subsequent start.
+
+A bundle is a single `.tar.gz` file containing the chunks (as JSONL), the pre-computed embeddings (as `.npz`), and a manifest with provenance and verification data.
+
+### Build and save
+
+```python
+from pathlib import Path
+from retrieval import CorpusLoader, IndexBundle, SentenceTransformerEmbedder
+
+# One-time: chunk the corpus, compute embeddings, save the bundle.
+chunks = CorpusLoader().load_pdf(
+    corpus_name="osfi-e23",
+    document_name="guideline-2027",
+    content=Path("/secure/corpora/osfi-e23-2027.pdf").read_bytes(),
+    sectionize=True,
+)
+embedder = SentenceTransformerEmbedder()
+bundle = IndexBundle.from_chunks(chunks, corpus_name="osfi-e23", embedder=embedder)
+bundle.save(Path("/secure/corpora/osfi-e23-2027.bundle.tgz"))
+```
+
+### Load on subsequent runs
+
+```python
+from pathlib import Path
+from retrieval import (
+    BM25Index, HybridIndex, IndexBundle, Retriever,
+    SentenceTransformerEmbedder, VectorIndex,
+)
+
+embedder = SentenceTransformerEmbedder()
+bundle = IndexBundle.load(
+    Path("/secure/corpora/osfi-e23-2027.bundle.tgz"),
+    embedder=embedder,  # verifies identity matches what the bundle was built with
+)
+bm25 = BM25Index(bundle.chunks)
+vector = VectorIndex(bundle.chunks, embedder, precomputed_embeddings=bundle.embeddings)
+retriever = Retriever(HybridIndex(bm25, vector))
+```
+
+### Verification at load time
+
+`IndexBundle.load` enforces:
+
+- Schema version compatibility. Bundles built under a different major version are refused with a clear error pointing at the schema-migration tool (Phase 7).
+- Chunks content hash. The SHA-256 of the chunks JSONL is recorded on the manifest and verified at load. Corruption or tampering surfaces immediately.
+- Chunk count consistency. The manifest's `chunk_count` must match what's actually in the JSONL.
+- Embedder identity. If embeddings are bundled and a load-time embedder is supplied, the identity strings must match (e.g., `SentenceTransformerEmbedder/all-MiniLM-L6-v2/384`). Pass `verify_embedder_identity=False` to relax this to a dimension-only check (useful when you intentionally swap to a compatible embedder).
+- Embeddings shape. The `.npz` array shape must match the chunk count and the manifest's recorded dimension.
+
+Any failure raises `IndexBundleLoadError` with a specific message identifying the cause.
+
+### Audit signal
+
+The manifest is plain JSON, embedded inside the tar archive. An auditor inspecting a bundle reads:
+
+```
+tar -xzOf osfi-e23-2027.bundle.tgz manifest.json | jq .
+```
+
+```json
+{
+  "schema_version": "1.0.0",
+  "framework_version": "0.6.0",
+  "corpus_name": "osfi-e23",
+  "chunk_count": 142,
+  "chunks_content_hash": "sha256:...",
+  "embedder_identity": "SentenceTransformerEmbedder/all-MiniLM-L6-v2/384",
+  "embedding_dimension": 384,
+  "built_at_unix": 1748284800
+}
+```
+
+Two bundles of the same corpus can be diffed manifest-to-manifest to see what changed: a new framework version, a new embedder, a different chunks hash. This gives a deploying organization a defensible answer to "what version of the regulation did the agent see at decision time?".
+
+### Atomic save
+
+`bundle.save(path)` writes to `path.tmp` first and renames into place. Callers reading the destination concurrently see either the pre-save bundle or the post-save bundle, never a partial write.
+
 ## Section-aware chunking (Phase 4.5)
 
 The default `CorpusLoader.load_pdf()` produces one Chunk per page. This works well for queries that target a regulation but it loses an audit signal: when the agent cites `osfi-e23:guideline-2023:page-15`, the reviewer must look up the PDF to know what's on page 15. "From Section 4.2: Independent Validation" reads better than "page 15" in a reviewer note.
@@ -320,10 +402,12 @@ Pages where no patterns match fall back to the page-based chunk automatically; m
 
 ## Deferred
 
-Tagged for follow-up commits within sub-system 5:
+Tagged for Phase 5 follow-up:
 
-- `[deferred-subsystem-5-followup]` Persistent BM25 indexes (parquet
-  format, lazy-loaded)
+- `[deferred-phase-5-later]` Embedding compression (fp16 variant of
+  the .npz to halve disk size; trade-off recall for size)
+- `[deferred-phase-5-later]` Differential bundle updates (rebuild only
+  changed chunks; low priority given immutable-corpus posture)
 
 Tagged for Phase 4 follow-up:
 
