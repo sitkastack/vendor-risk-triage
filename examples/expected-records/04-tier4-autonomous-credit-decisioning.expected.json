@@ -45,7 +45,12 @@
     "score": 0.88,
     "interpretation": "high"
   },
-  "output_schema_version": "1.0.0",
+  "output_schema_version": "1.1.0",
   "review_interval_days": 1,
-  "regulatory_framework_tags": ["EU_AI_Act_Annex_III", "OSFI_E_23", "NIST_AI_RMF", "SR_11_7"]
+  "regulatory_framework_tags": [
+    "EU_AI_Act_Annex_III",
+    "OSFI_E_23",
+    "NIST_AI_RMF",
+    "SR_11_7"
+  ]
 }

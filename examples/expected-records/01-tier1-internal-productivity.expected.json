@@ -33,7 +33,9 @@
     "score": 0.92,
     "interpretation": "high"
   },
-  "output_schema_version": "1.0.0",
+  "output_schema_version": "1.1.0",
   "review_interval_days": 365,
-  "regulatory_framework_tags": ["OSFI_E_23"]
+  "regulatory_framework_tags": [
+    "OSFI_E_23"
+  ]
 }

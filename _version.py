@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.6.0"
+FRAMEWORK_VERSION: str = "0.7.0"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,15 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.7.0 (sub-system 6, Phase 6 SS2): observability package added.
+  TriageRecord gains optional ``correlation_id`` field (output
+  contract bumped to 1.1.0). TriageAgent gains optional
+  ``observability`` config parameter for structured event logging,
+  metrics, and tracing. Default is silent (NoopEventLogger,
+  NoopMetrics, NoopTracer). New ``[otel]`` extra for the OpenTelemetry
+  adapter. Twelve framework events and ten built-in metrics are part
+  of the public surface; renames or removals require a major version
+  bump.
 - 0.6.0 (sub-system 5, May 26, 2026): agent accepts optional
   regulation context (retrieved chunks) and includes them in the LLM
   prompt under BEGIN_REGULATION_CONTEXT / END_REGULATION_CONTEXT

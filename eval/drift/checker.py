@@ -46,6 +46,8 @@ baseline; the diff is reviewable.
 - ``decision_timestamp`` (changes per run; not a meaningful signal)
 - ``agent_version`` (changes when intentional; recorded but not diffed)
 - ``decision_id`` (each run has its own)
+- ``correlation_id`` (generated per-run for observability; not a
+  classification signal)
 
 The check does not exercise a real LLM. It uses the test-double
 FunctionModel pattern from tests/test_demo_scenarios.py, with the
@@ -227,6 +229,8 @@ def compare_records(
     - ``decision_id`` (each run has its own)
     - ``decision_timestamp`` (changes per run)
     - ``agent_version`` (changes when intentional; not a drift signal)
+    - ``correlation_id`` (generated per-run for observability; not a
+      classification signal)
     - ``input_submission_id`` (input-dependent, not framework drift)
     - ``input_schema_version`` (would be a schema migration, not drift)
     - ``output_schema_version`` (same)

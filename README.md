@@ -50,6 +50,8 @@ Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across 
 
 `reporting/` turns framework outputs into reader-facing HTML artifacts and ships records to operational pipelines. `audit_pack` renders one TriageRecord as a per-record document a risk committee or external auditor would read; `batch_index` renders a list of records as an overview index. `audit_log` wraps records in a content-hashed envelope for shipping to SIEMs, archives, and event buses. Self-contained HTML (inline CSS, no JavaScript, no external assets), print-stylesheet aware, white-label-friendly via a configurable attribution footer.
 
+`observability/` provides structured event logging, metrics emission, and distributed tracing via Protocol-based sinks. Defaults are silent (no-op implementations); deployments wanting observability construct an `Observability` bundle with configured sinks and pass it to `TriageAgentConfig`. Twelve event names, ten metric names, and five span names are part of the public surface as of 0.7.0. The `[otel]` extra installs the OpenTelemetry tracer adapter for shipping spans to Honeycomb, Datadog, Jaeger, or any OTLP-compatible backend. See `docs/observability-guide.md` for Prometheus and StatsD adapter examples plus the correlation_id pattern for joining logs, metrics, and traces.
+
 ### Documentation
 
 The phase-by-phase design documents live in `docs/`:
@@ -59,6 +61,7 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/phase-2/` covers system architecture, trust boundaries, the full threat model (T-AI1 through T-AI8), and the architecture decision records
 - `docs/customization-guide.md` walks through customizing the framework for a specific deploying organization: intake checklist, configuration decision tree, extension points, a worked example, and anti-patterns to refuse
 - `docs/audit-log-shipping.md` specifies the envelope format for shipping TriageRecords to SIEMs, archives, and event buses with content-hash integrity verification and replay semantics
+- `docs/observability-guide.md` covers structured event logging, metrics emission, distributed tracing via OpenTelemetry, and correlating signals via correlation_id. The guide includes Prometheus and StatsD adapter examples for deployments wanting metrics; the OpenTelemetry tracer adapter ships in the framework's `[otel]` extra.
 - `docs/maintenance-workflow.md` documents the procedures for maintainers: version bumps, SYSTEM_PROMPT updates, corpus refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist
 - `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale

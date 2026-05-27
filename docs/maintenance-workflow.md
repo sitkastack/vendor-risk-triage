@@ -49,6 +49,20 @@ The `vrt` console script and its five subcommands (`triage`, `render`, `drift`, 
 
 The CLI is invoked through two paths: the installed `vrt` console script (registered in `pyproject.toml` under `[project.scripts]`) and `python -m cli`. Both must work for the framework to be considered installable; the CI test `test_cli_main_module_runnable` exercises the latter, and the install verification step (`pip install -e .` followed by `vrt --version`) is part of the release checklist.
 
+### Observability surface compatibility
+
+As of `0.7.0`, the framework emits a defined set of observability signals through the `observability` package:
+
+- Twelve event names (`agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`)
+- Ten metric names (the `vrt_*` family documented in `docs/observability-guide.md`)
+- Five span names (`vrt.triage`, `vrt.llm_call`, `vrt.retrieval`, `vrt.validation`, `vrt.audit_pack.render`)
+- The three Protocol interfaces (`EventLogger`, `Metrics`, `Tracer`)
+- The `correlation_id` field on `TriageRecord` (optional, 16-character lowercase hex when populated)
+
+Renames or removals to any of these are breaking changes requiring a major version bump. Additions are minor bumps. Adding methods to the Protocol interfaces is a breaking change for any deployment with custom implementations.
+
+The `[otel]` extra and the `OtelTracer` adapter are stable as of `0.7.0`. The OpenTelemetry dependency pin range (`opentelemetry-api>=1.20.0,<2`) is part of the framework's commitment; bumping the upper bound is a minor change when API-compatible, a major change when the upgrade breaks deployments.
+
 ## 2. SYSTEM_PROMPT update procedure
 
 The `SYSTEM_PROMPT` constant in `agent/agent.py` shapes every classification the framework produces. Edits to it require disciplined process.
@@ -167,9 +181,23 @@ The framework has three versioned schemas: input contract (`schemas/input-contra
 
 When a major bump becomes necessary, the framework ships a migration document at `docs/schema-migration-X-to-Y.md` describing field-by-field changes and supplying a transformation function. The transformation lives in `schemas/migrations/` (does not exist today; create it on first migration).
 
-The output schema is the harder migration: existing TriageRecords in customer archives must remain valid under their original schema version. The framework keeps prior schema versions in `schemas/output-contract-1.0.0.schema.json`, `schemas/output-contract-2.0.0.schema.json`, and so on. The renderer in `reporting/audit_pack.py` reads the record's `output_schema_version` field and dispatches accordingly. The agent only produces records under the latest schema.
+The output schema is the harder migration: existing TriageRecords in customer archives must remain valid under their original schema version. The framework keeps prior schema versions in `schemas/output-contract-1.0.0.schema.json`, `schemas/output-contract-1.1.0.schema.json`, and so on. `schemas/validate.py` reads the record's `output_schema_version` field and dispatches to the corresponding schema file. The agent only produces records under the latest schema (currently 1.1.0).
 
 The audit log envelope is the simpler case: a major bump signals to consumers that they must upgrade before parsing newer envelopes; consumers already check `envelope_schema_version` and refuse incompatible majors with a clear error (`parse_jsonl_line` raises `AuditLogParseError` with a "incompatible" message).
+
+### Worked example: 1.0.0 -> 1.1.0 (Phase 6 SS2)
+
+The 0.7.0 release added the optional `correlation_id` field to TriageRecord for observability correlation across logs, metrics, and traces. The migration:
+
+1. New schema file `schemas/output-contract-1.1.0.schema.json` was added alongside the existing `output-contract-1.0.0.schema.json`. The 1.0.0 file was not modified.
+2. The new file added `correlation_id` to `properties` with `type: string`, `minLength: 1`, `maxLength: 128`, and a regex pattern restricting it to URL-safe characters. The field is NOT in `required`, preserving backwards compatibility.
+3. The new file updated `output_schema_version` from `pattern: "^\\d+\\.\\d+\\.\\d+$"` to `const: "1.1.0"`. Records explicitly declare which schema they conform to.
+4. `schemas/validate.py` gained a `_OUTPUT_SCHEMA_FILES` dispatch mapping; `validate_output()` reads `output_schema_version` from the record and selects the matching schema file.
+5. `agent/agent.py` bumped `OUTPUT_SCHEMA_VERSION` to `"1.1.0"`. New records declare 1.1.0; old records in customer archives still declare 1.0.0 and validate against the 1.0.0 schema.
+6. The Pydantic `TriageRecord` model in `agent/output_models.py` gained an optional `correlation_id: Optional[str]` field with matching validation.
+7. The drift detection baseline was regenerated (the new records have correlation_id and declare 1.1.0); the drift checker's "always ignored" list was extended to include `correlation_id`.
+
+No migration code was needed because the change is purely additive: every 1.0.0 record is a valid 1.1.0 record except for the schema version stamp itself, and consumers reading older records validate them against the older schema.
 
 ### What not to do
 

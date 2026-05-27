@@ -63,9 +63,39 @@ def validate_input(submission: dict[str, Any]) -> tuple[bool, list[dict[str, Any
     return _validate(submission, schema)
 
 
+_OUTPUT_SCHEMA_FILES: dict[str, str] = {
+    "1.0.0": "output-contract-1.0.0.schema.json",
+    "1.1.0": "output-contract-1.1.0.schema.json",
+}
+"""Mapping from output_schema_version to the schema file that validates it.
+
+Schema files are kept in the repo for every published version so that
+records produced under prior versions remain validatable. The current
+framework default is the highest version in this map; the agent stamps
+that version into records it produces.
+"""
+
+
 def validate_output(record: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
-    """Validate a triage record against the output contract (1.0.0)."""
-    schema = _load_schema("output-contract-1.0.0.schema.json")
+    """Validate a triage record against the appropriate output contract.
+
+    Dispatches by the ``output_schema_version`` field in the record so
+    older records (produced under prior framework versions) continue
+    to validate. If the version is unknown, falls back to 1.0.0 and
+    reports the unknown-version situation in the errors list.
+    """
+    version = record.get("output_schema_version", "1.0.0")
+    schema_filename = _OUTPUT_SCHEMA_FILES.get(version)
+    if schema_filename is None:
+        return False, [{
+            "message": (
+                f"Unknown output_schema_version {version!r}. Supported "
+                f"versions: {sorted(_OUTPUT_SCHEMA_FILES.keys())}."
+            ),
+            "path": "output_schema_version",
+            "schema_path": "",
+        }]
+    schema = _load_schema(schema_filename)
     return _validate(record, schema)
 
 

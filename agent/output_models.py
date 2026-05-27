@@ -295,6 +295,19 @@ class TriageRecord(BaseModel):
     )
     review_interval_days: Optional[int] = Field(default=None, ge=1)
     regulatory_framework_tags: Optional[list[FrameworkTag]] = Field(default=None)
+    correlation_id: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        description=(
+            "Opaque identifier correlating this decision's structured "
+            "log events, metrics labels, and trace spans. Generated "
+            "by the framework on each triage call (16-char lowercase "
+            "hex). Optional in records produced by deployments that "
+            "disable observability."
+        ),
+    )
 
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Serialize to dict, excluding unset optional fields by default.

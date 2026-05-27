@@ -85,7 +85,7 @@ from agent.output_models import TriageRecord
 
 
 REPO_ROOT = Path(__file__).parent.parent
-SCHEMA_PATH = REPO_ROOT / "schemas" / "output-contract-1.0.0.schema.json"
+SCHEMA_PATH = REPO_ROOT / "schemas" / "output-contract-1.1.0.schema.json"
 INPUT_EXAMPLE_PATH = REPO_ROOT / "examples" / "input-submission.example.json"
 
 

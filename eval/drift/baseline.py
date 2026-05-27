@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from agent.output_models import TriageRecord
 
@@ -128,7 +128,7 @@ def load_baselines(path: Path = DEFAULT_BASELINE_PATH) -> dict[str, TriageRecord
 def save_baselines(
     baselines: dict[str, TriageRecord],
     path: Path = DEFAULT_BASELINE_PATH,
-    framework_version: str = "0.6.0",
+    framework_version: Optional[str] = None,
 ) -> Path:
     """Write baseline records to a JSONL file.
 
@@ -139,11 +139,16 @@ def save_baselines(
         baselines: Map of scenario_id to TriageRecord.
         path: Destination path. The parent directory is created if needed.
         framework_version: Framework version string to record in the
-            header. Defaults to the current pinned version.
+            header. Defaults to the framework's current FRAMEWORK_VERSION
+            (single source of truth in ``_version.py``).
 
     Returns:
         The path written to.
     """
+    if framework_version is None:
+        from _version import FRAMEWORK_VERSION
+        framework_version = FRAMEWORK_VERSION
+
     path.parent.mkdir(parents=True, exist_ok=True)
 
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

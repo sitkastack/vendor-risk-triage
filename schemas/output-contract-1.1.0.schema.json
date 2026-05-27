@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sitkastack.com/schemas/vendor-risk-triage/output-contract/1.1.0.json",
+  "title": "Vendor Risk Triage Output Contract",
+  "description": "Schema for the triage record the agent writes for every classification decision. A record that does not conform is treated as an incomplete decision and is not relied upon.",
+  "$ref": "#/$defs/base",
+  "unevaluatedProperties": false,
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": [
+        "decision_id",
+        "decision_timestamp",
+        "input_submission_id",
+        "input_schema_version",
+        "agent_version",
+        "risk_tier",
+        "recommended_disposition",
+        "classification_rationale",
+        "evidence_cited",
+        "confidence_signal",
+        "output_schema_version"
+      ],
+      "properties": {
+        "decision_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Unique identifier for this triage decision, stable for the life of the record and referenced by any record that supersedes it."
+        },
+        "decision_timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime at which the agent wrote this record. Fixes when the decision was made."
+        },
+        "input_submission_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identifier of the validated input submission this decision was made from. Assigned by the intake system upon successful validation against the input contract, linking the record to the exact data the agent read."
+        },
+        "input_schema_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Semver version of the input contract that validated the source submission, recorded so the intake rules in force at decision time are recoverable."
+        },
+        "agent_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identifier of the triage agent that produced the decision, such as a release tag or build hash, so the decision can be reproduced against the exact agent that made it."
+        },
+        "risk_tier": {
+          "type": "string",
+          "enum": [
+            "tier_1_low",
+            "tier_2_moderate",
+            "tier_3_elevated",
+            "tier_4_high"
+          ],
+          "description": "Risk tier assigned to the vendor, per the taxonomy in docs/phase-0/01-risk-classification.md."
+        },
+        "recommended_disposition": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "conditional_approve",
+            "escalate_senior_review",
+            "reject"
+          ],
+          "description": "Disposition the agent recommends. A recommendation for a human decision, not a final action."
+        },
+        "classification_rationale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000,
+          "description": "The agent's reasoning for the tier and disposition, in bounded prose. The narrative an examiner reads to understand why the decision was reached."
+        },
+        "evidence_cited": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The specific input fields the agent relied on and what it drew from each. At least one citation is required so no decision rests on unstated grounds.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "input_field_reference",
+              "reasoning"
+            ],
+            "properties": {
+              "input_field_reference": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Reference to a field in the input submission, such as a field name or JSON pointer, that the agent relied on."
+              },
+              "reasoning": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "Bounded prose explaining what the agent drew from that field and how it bore on the tier or disposition."
+              }
+            }
+          }
+        },
+        "confidence_signal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "score",
+            "interpretation"
+          ],
+          "description": "The agent's confidence in the classification. The contract records it; calibration is a Phase 3 concern.",
+          "properties": {
+            "score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Confidence score from 0 to 1 as reported by the agent."
+            },
+            "interpretation": {
+              "type": "string",
+              "enum": [
+                "low",
+                "moderate",
+                "high"
+              ],
+              "description": "Banded interpretation of the score, recorded so a reader is not left to interpret a bare number."
+            }
+          }
+        },
+        "output_schema_version": {
+          "type": "string",
+          "description": "Semver version of this output contract (the reference) the record conforms to. Travels with the record so the reference shape that produced it is always recoverable. When the record was produced under an institutional extension, the extension's version is captured separately in extension_schema_version.",
+          "const": "1.1.0"
+        },
+        "extension_schema_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Semver version of the institution's extension schema when the record was produced under an extension of this contract rather than the reference directly. Captures the extension version alongside output_schema_version so an audit can reconstruct the full schema chain. Absent when the record was produced under the reference schema directly."
+        },
+        "required_mitigations": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Mitigations attached to a conditional approval, such as keeping a feature disabled or requiring a contractual term. Required when recommended_disposition is conditional_approve.",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "accountable_owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "Name or role of the human accountable for an escalated decision. Required when recommended_disposition is escalate_senior_review."
+        },
+        "supersedes": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "decision_id of the prior record this record replaces, present when this record is a correction."
+        },
+        "revoked_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 datetime at which this decision was revoked, if it has been. Paired with revocation_reason."
+        },
+        "revocation_reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "Bounded prose explaining why the decision was revoked. Paired with revoked_at."
+        },
+        "review_interval_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Recommended number of days until the vendor is re-triaged, when a recurring review cadence applies."
+        },
+        "regulatory_framework_tags": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "Frameworks the decision is explicitly relevant to, for filtering and regulator-facing reporting. Supports standard framework codes and institution-specific custom codes via the pattern custom:<institution>:<framework>.",
+          "items": {
+            "type": "string",
+            "oneOf": [
+              {
+                "enum": [
+                  "EU_AI_Act_Annex_III",
+                  "OSFI_E_23",
+                  "NIST_AI_RMF",
+                  "NAIC",
+                  "SR_11_7"
+                ]
+              },
+              {
+                "pattern": "^custom:[a-z0-9_-]{1,64}:[a-z0-9_-]{1,128}$"
+              }
+            ]
+          }
+        },
+        "correlation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Opaque identifier correlating this decision's structured log events, metrics labels, and trace spans. Generated by the framework on each triage call (16-char lowercase hex from uuid.uuid4). Not a security-sensitive value; safe to log. Optional in records produced by deployments that disable observability or use a customized observability bundle that does not propagate the id back into the record."
+        }
+      },
+      "dependentRequired": {
+        "revoked_at": [
+          "revocation_reason"
+        ],
+        "revocation_reason": [
+          "revoked_at"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "recommended_disposition"
+            ],
+            "properties": {
+              "recommended_disposition": {
+                "const": "conditional_approve"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "required_mitigations"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "recommended_disposition"
+            ],
+            "properties": {
+              "recommended_disposition": {
+                "const": "escalate_senior_review"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "accountable_owner"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

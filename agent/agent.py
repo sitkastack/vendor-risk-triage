@@ -77,6 +77,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -121,7 +122,7 @@ __all__ = [
 # constructing an agent. FRAMEWORK_VERSION is imported at the top of the
 # module from the canonical _version source.
 
-OUTPUT_SCHEMA_VERSION: str = "1.0.0"
+OUTPUT_SCHEMA_VERSION: str = "1.1.0"
 """Semver of the output contract this agent emits to.
 
 Locked to the Phase 1 contract at ``schemas/output-contract-1.0.0.schema.json``.
@@ -380,11 +381,18 @@ class TriageAgentConfig:
             customized deployments from upstream. The customization
             guide (docs/customization-guide.md) walks through the
             full pattern.
+        observability: Optional ``Observability`` bundle for structured
+            event logging, metrics, and tracing. Defaults to an
+            all-noop bundle: the framework runs silently. Deployments
+            wanting observability construct a bundle with configured
+            event_logger, metrics, and tracer sinks. See
+            ``docs/observability-guide.md`` for the integration guide.
     """
 
     model: Any = DEFAULT_MODEL
     retries: int = 2
     system_prompt: Optional[str] = None
+    observability: Optional[Any] = None  # Optional["Observability"] - typed as Any to avoid the import cost when observability is disabled
 
 
 class TriageAgent:
@@ -432,7 +440,9 @@ class TriageAgent:
                 ``config.system_prompt`` to customize the agent's prompt
                 without modifying the module-level constant; the resulting
                 agent_version records the custom prompt's hash for audit
-                traceability (see docs/customization-guide.md).
+                traceability (see docs/customization-guide.md). Pass
+                ``config.observability`` to enable structured event
+                logging, metrics, and tracing; defaults to silent.
         """
         self._config: TriageAgentConfig = config if config is not None else TriageAgentConfig()
         active_prompt: str = (
@@ -451,6 +461,37 @@ class TriageAgent:
         )
         self._agent_version: str = _compose_agent_version(
             self._config.model, active_prompt_hash,
+        )
+
+        # Observability: store the bundle (or build a silent default).
+        # Lazy import keeps the framework's noop case free of cost when
+        # observability is disabled.
+        if self._config.observability is not None:
+            self._observability = self._config.observability
+        else:
+            from observability import Observability
+            self._observability = Observability()
+
+        # Emit construction event so deployments tracking "which agent
+        # versions are running" can see new agents come online.
+        from observability.events import EventStatus
+        self._observability.emit_event(
+            "agent.constructed",
+            status=EventStatus.SUCCESS,
+            attributes={
+                "agent_version": self._agent_version,
+                "framework_version": FRAMEWORK_VERSION,
+                "system_prompt_hash": active_prompt_hash,
+                "retries": self._config.retries,
+            },
+        )
+        self._observability.gauge_set(
+            "vrt_framework_info",
+            1.0,
+            labels={
+                "version": FRAMEWORK_VERSION,
+                "system_prompt_hash": active_prompt_hash,
+            },
         )
 
     @property
@@ -586,30 +627,194 @@ class TriageAgent:
         # The user prompt is the submission as JSON-shaped Python plus
         # any pre-extracted documents and retrieved regulation chunks
         # wrapped in delimiters.
-        result = self._pydantic_agent.run_sync(
-            _format_user_prompt(submission, documents, regulation_chunks)
-        )
-        classification: _TriageClassification = result.output
 
-        # Compose the full record. Metadata fields here are Python-controlled;
-        # only the classification body comes from the LLM.
-        return TriageRecord(
-            decision_id=record_decision_id,
-            decision_timestamp=decision_timestamp,
-            input_submission_id=input_submission_id,
-            input_schema_version=input_schema_version,
-            agent_version=self._agent_version,
-            risk_tier=classification.risk_tier,
-            recommended_disposition=classification.recommended_disposition,
-            classification_rationale=classification.classification_rationale,
-            evidence_cited=classification.evidence_cited,
-            confidence_signal=classification.confidence_signal,
-            output_schema_version=OUTPUT_SCHEMA_VERSION,
-            required_mitigations=classification.required_mitigations,
-            accountable_owner=classification.accountable_owner,
-            regulatory_framework_tags=classification.regulatory_framework_tags,
-            review_interval_days=classification.review_interval_days,
+        # Generate a correlation_id for this operation. Threaded through
+        # every event, metric label, and span attribute so consumers can
+        # correlate the operation's signals.
+        correlation_id = self._observability.new_correlation_id()
+
+        from observability.events import EventStatus
+
+        # Emit triage.started event
+        self._observability.emit_event(
+            "triage.started",
+            status=EventStatus.IN_PROGRESS,
+            correlation_id=correlation_id,
+            attributes={
+                "input_submission_id": input_submission_id,
+                "input_schema_version": input_schema_version,
+                "document_count": len(documents) if documents else 0,
+                "regulation_chunk_count": (
+                    len(regulation_chunks) if regulation_chunks else 0
+                ),
+            },
         )
+
+        triage_start_time = time.time()
+        triage_status: str = "success"
+
+        try:
+            with self._observability.start_span(
+                "vrt.triage",
+                attributes={
+                    "vrt.submission_id": input_submission_id,
+                    "vrt.correlation_id": correlation_id,
+                    "vrt.framework_version": FRAMEWORK_VERSION,
+                },
+            ) as span:
+                # LLM call: timed and wrapped in a child span
+                llm_start_time = time.time()
+                self._observability.emit_event(
+                    "llm.call.started",
+                    status=EventStatus.IN_PROGRESS,
+                    correlation_id=correlation_id,
+                    attributes={"model": str(self._config.model)},
+                )
+                try:
+                    with self._observability.start_span(
+                        "vrt.llm_call",
+                        attributes={"vrt.model": str(self._config.model)},
+                    ):
+                        result = self._pydantic_agent.run_sync(
+                            _format_user_prompt(
+                                submission, documents, regulation_chunks
+                            )
+                        )
+                    llm_duration = time.time() - llm_start_time
+                    self._observability.emit_event(
+                        "llm.call.completed",
+                        status=EventStatus.SUCCESS,
+                        correlation_id=correlation_id,
+                        duration_ms=llm_duration * 1000,
+                        attributes={"model": str(self._config.model)},
+                    )
+                    self._observability.counter_inc(
+                        "vrt_llm_call_total",
+                        labels={"status": "success"},
+                    )
+                    self._observability.histogram_observe(
+                        "vrt_llm_call_duration_seconds",
+                        llm_duration,
+                    )
+                except Exception as exc:
+                    llm_duration = time.time() - llm_start_time
+                    self._observability.emit_event(
+                        "llm.call.completed",
+                        status=EventStatus.ERROR,
+                        correlation_id=correlation_id,
+                        duration_ms=llm_duration * 1000,
+                        attributes={
+                            "model": str(self._config.model),
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    self._observability.counter_inc(
+                        "vrt_llm_call_total",
+                        labels={"status": "error"},
+                    )
+                    self._observability.counter_inc(
+                        "vrt_llm_errors_total",
+                        labels={"error_type": type(exc).__name__},
+                    )
+                    span.record_error(exc)
+                    raise
+
+                classification: _TriageClassification = result.output
+
+                # Validation step: TriageRecord construction itself
+                # validates the classification + framework metadata. Wrap
+                # the construction in a validation span and emit events.
+                self._observability.emit_event(
+                    "validation.started",
+                    status=EventStatus.IN_PROGRESS,
+                    correlation_id=correlation_id,
+                )
+                with self._observability.start_span("vrt.validation"):
+                    record = TriageRecord(
+                        decision_id=record_decision_id,
+                        decision_timestamp=decision_timestamp,
+                        input_submission_id=input_submission_id,
+                        input_schema_version=input_schema_version,
+                        agent_version=self._agent_version,
+                        risk_tier=classification.risk_tier,
+                        recommended_disposition=classification.recommended_disposition,
+                        classification_rationale=classification.classification_rationale,
+                        evidence_cited=classification.evidence_cited,
+                        confidence_signal=classification.confidence_signal,
+                        output_schema_version=OUTPUT_SCHEMA_VERSION,
+                        required_mitigations=classification.required_mitigations,
+                        accountable_owner=classification.accountable_owner,
+                        regulatory_framework_tags=classification.regulatory_framework_tags,
+                        review_interval_days=classification.review_interval_days,
+                        correlation_id=correlation_id,
+                    )
+                self._observability.emit_event(
+                    "validation.completed",
+                    status=EventStatus.SUCCESS,
+                    correlation_id=correlation_id,
+                )
+
+                # Decorate the root span with the produced classification
+                span.set_attribute("vrt.decision_id", record.decision_id)
+                span.set_attribute("vrt.tier", str(record.risk_tier.value if hasattr(record.risk_tier, "value") else record.risk_tier))
+                span.set_attribute(
+                    "vrt.disposition",
+                    str(record.recommended_disposition.value if hasattr(record.recommended_disposition, "value") else record.recommended_disposition),
+                )
+
+                triage_duration = time.time() - triage_start_time
+                tier_label = str(record.risk_tier.value if hasattr(record.risk_tier, "value") else record.risk_tier)
+                disp_label = str(record.recommended_disposition.value if hasattr(record.recommended_disposition, "value") else record.recommended_disposition)
+
+                # Metrics: triage_total + triage_duration_seconds
+                self._observability.counter_inc(
+                    "vrt_triage_total",
+                    labels={
+                        "tier": tier_label,
+                        "disposition": disp_label,
+                        "status": "success",
+                    },
+                )
+                self._observability.histogram_observe(
+                    "vrt_triage_duration_seconds",
+                    triage_duration,
+                )
+
+                # Emit triage.completed
+                self._observability.emit_event(
+                    "triage.completed",
+                    status=EventStatus.SUCCESS,
+                    correlation_id=correlation_id,
+                    duration_ms=triage_duration * 1000,
+                    attributes={
+                        "decision_id": record.decision_id,
+                        "tier": tier_label,
+                        "disposition": disp_label,
+                        "confidence_score": record.confidence_signal.score,
+                    },
+                )
+                return record
+        except Exception as exc:
+            triage_duration = time.time() - triage_start_time
+            triage_status = "error"
+            self._observability.counter_inc(
+                "vrt_triage_total",
+                labels={
+                    "tier": "unknown",
+                    "disposition": "unknown",
+                    "status": "error",
+                },
+            )
+            self._observability.emit_event(
+                "triage.completed",
+                status=EventStatus.ERROR,
+                correlation_id=correlation_id,
+                duration_ms=triage_duration * 1000,
+                attributes={
+                    "error_type": type(exc).__name__,
+                },
+            )
+            raise
 
 
 # Module-private helpers.
