@@ -46,6 +46,8 @@ Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across 
 
 `eval/judge/` is the LLM-as-judge harness. It wraps any PydanticAI Model and grades a TriageRecord against a `Rubric`. Three pre-built rubrics ship: rationale coherence, citation grounding, and mitigation appropriateness. Edge-case short-circuits handle vacuous cases without an LLM call. Audit traceability through `judge_model_version` and `run_timestamp`.
 
+`eval/drift/` is the drift detection package. Compares the framework's current decisions on the five demo scenarios against a checked-in baseline at `eval/baselines/demo-scenarios.baseline.jsonl`. Hard drift (tier, disposition, evidence count, framework tags) always fails CI; soft drift (confidence delta, rationale text, mitigation text) fails CI with a "regenerate baseline if intentional" bypass message. CI integrated via `scripts/check_drift.py`.
+
 `reporting/` turns framework outputs into reader-facing HTML artifacts and ships records to operational pipelines. `audit_pack` renders one TriageRecord as a per-record document a risk committee or external auditor would read; `batch_index` renders a list of records as an overview index. `audit_log` wraps records in a content-hashed envelope for shipping to SIEMs, archives, and event buses. Self-contained HTML (inline CSS, no JavaScript, no external assets), print-stylesheet aware, white-label-friendly via a configurable attribution footer.
 
 ### Documentation

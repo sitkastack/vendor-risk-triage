@@ -41,6 +41,15 @@ jobs:
       - name: Run pytest with coverage
         run: pytest -v --cov=agent --cov=eval --cov=ingestion --cov=retrieval --cov=reporting --cov-report=term-missing --cov-fail-under=95
 
+      - name: Check for classification drift against baseline
+        run: |
+          python scripts/check_drift.py
+          if [ $? -ne 0 ]; then
+            echo "::error::Classification drift detected. Investigate the diff above. If the drift is intentional, regenerate the baseline locally via 'python scripts/check_drift.py --update-baseline' and commit the updated file."
+            exit 1
+          fi
+          echo "OK: No drift detected against baseline"
+
       - name: Check for em dashes in markdown
         run: |
           if grep -rn "—" docs/ README.md CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md 2>/dev/null; then
