@@ -379,10 +379,20 @@ class TriageAgentConfig:
             _TriageClassification). Default 2 (one initial attempt plus
             one retry; reasonable for vendor risk where correctness beats
             latency).
+        system_prompt: Optional override for the agent's SYSTEM_PROMPT.
+            When None (default), the module-level SYSTEM_PROMPT is used
+            and the resulting agent_version records SYSTEM_PROMPT_HASH.
+            When a string is supplied, it replaces the SYSTEM_PROMPT;
+            a fresh SHA-256[:12] hash is computed from the override and
+            flows into agent_version so audit trails distinguish
+            customized deployments from upstream. The customization
+            guide (docs/customization-guide.md) walks through the
+            full pattern.
     """
 
     model: Any = DEFAULT_MODEL
     retries: int = 2
+    system_prompt: Optional[str] = None
 
 
 class TriageAgent:
@@ -426,16 +436,30 @@ class TriageAgent:
         Args:
             config: Optional configuration. Defaults produce an agent using
                 ``DEFAULT_MODEL`` and 2 retries. Pass a TestModel or
-                FunctionModel via ``config.model`` for tests.
+                FunctionModel via ``config.model`` for tests. Pass
+                ``config.system_prompt`` to customize the agent's prompt
+                without modifying the module-level constant; the resulting
+                agent_version records the custom prompt's hash for audit
+                traceability (see docs/customization-guide.md).
         """
         self._config: TriageAgentConfig = config if config is not None else TriageAgentConfig()
+        active_prompt: str = (
+            self._config.system_prompt
+            if self._config.system_prompt is not None
+            else SYSTEM_PROMPT
+        )
+        active_prompt_hash: str = hashlib.sha256(
+            active_prompt.encode("utf-8")
+        ).hexdigest()[:12]
         self._pydantic_agent: Agent[None, _TriageClassification] = Agent(
             model=self._config.model,
             output_type=_TriageClassification,
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=active_prompt,
             retries=self._config.retries,
         )
-        self._agent_version: str = _compose_agent_version(self._config.model)
+        self._agent_version: str = _compose_agent_version(
+            self._config.model, active_prompt_hash,
+        )
 
     @property
     def agent_version(self) -> str:
@@ -733,7 +757,10 @@ def _verify_documents_against_submission(
             )
 
 
-def _compose_agent_version(model: Any) -> str:
+def _compose_agent_version(
+    model: Any,
+    prompt_hash: str = SYSTEM_PROMPT_HASH,
+) -> str:
     """Build the agent_version string recorded on every TriageRecord.
 
     Format: ``vrt-agent-v{framework}-{provider}-{model}-prompt-{hash12}``.
@@ -746,6 +773,15 @@ def _compose_agent_version(model: Any) -> str:
     The string is short enough to fit the schema's ``agent_version``
     maxLength=128 and structured enough that an auditor can grep for runs
     that share a model or prompt without parsing free text.
+
+    Args:
+        model: The PydanticAI model identifier or Model instance.
+        prompt_hash: SHA-256[:12] of the active SYSTEM_PROMPT. Defaults to
+            the module-level SYSTEM_PROMPT_HASH (the upstream prompt).
+            Customer deployments overriding the prompt via
+            TriageAgentConfig.system_prompt pass the hash of their
+            customized prompt so the agent_version records which prompt
+            produced each decision.
     """
     if isinstance(model, str):
         # Provider-prefixed identifier like "anthropic:claude-sonnet-4-5".
@@ -768,7 +804,7 @@ def _compose_agent_version(model: Any) -> str:
         model_part = model.__class__.__name__
 
     composed = (
-        f"vrt-agent-v{FRAMEWORK_VERSION}-{model_part}-prompt-{SYSTEM_PROMPT_HASH}"
+        f"vrt-agent-v{FRAMEWORK_VERSION}-{model_part}-prompt-{prompt_hash}"
     )
     # The output schema caps agent_version at 128. If a particularly long
     # model identifier overflows, truncate the model portion while keeping
@@ -776,7 +812,7 @@ def _compose_agent_version(model: Any) -> str:
     # identifiable from the recorded string.
     if len(composed) > 128:
         prefix = f"vrt-agent-v{FRAMEWORK_VERSION}-"
-        suffix = f"-prompt-{SYSTEM_PROMPT_HASH}"
+        suffix = f"-prompt-{prompt_hash}"
         budget = 128 - len(prefix) - len(suffix)
         composed = f"{prefix}{model_part[:budget]}{suffix}"
     return composed

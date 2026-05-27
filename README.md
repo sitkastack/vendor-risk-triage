@@ -55,6 +55,8 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/phase-0/` covers the problem definition, regulatory framework mapping, and scope boundaries
 - `docs/phase-1/` covers data contracts, privacy spec, synthetic data specification, and the extension guide
 - `docs/phase-2/` covers system architecture, trust boundaries, the full threat model (T-AI1 through T-AI8), and the architecture decision records
+- `docs/customization-guide.md` walks through customizing the framework for a specific deploying organization: intake checklist, configuration decision tree, extension points, a worked example, and anti-patterns to refuse
+- `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale
 
 ### Schemas and examples
