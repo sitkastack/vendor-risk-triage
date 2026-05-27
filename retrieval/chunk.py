@@ -11,26 +11,28 @@ specific chunks ("per OSFI E-23 chunk osfi-e23:guideline-2023:page-7").
 The reference is auditable: a reviewer can look up the chunk_id, find the
 exact text the agent saw, and verify the agent's reasoning against it.
 
-Chunking strategy (MVP):
+Chunking strategy:
 
-One chunk per page. ``PDFReader`` (sub-system 4) already produces
-per-page text; the CorpusLoader wraps each page in a Chunk. This is the
-cheapest strategy and works because regulations are mostly text-dense
-without massive single-paragraph pages.
+Two strategies are supported. Page-based (the default) wraps each
+extracted PDF page in a single Chunk; section-aware sub-divides pages
+by detected section headings, producing one Chunk per section with
+the heading recorded on the ``section_heading`` field.
 
 Deferred:
 
-- [deferred-subsystem-5-followup] Section-aware chunking (detect headings
-  and group neighboring text into a chunk per section). Improves recall
-  on queries that name a specific section. Requires PDF structure
-  inference that pypdf does not provide out of the box.
 - [deferred-subsystem-5-followup] Sliding-window chunking (overlap N
   tokens between adjacent chunks). Improves recall on queries whose
   matching phrase straddles a chunk boundary. Multiplies index size.
-- [deferred-phase-4] Multi-granularity chunking (small + large chunks
-  indexed together; reranker picks the right granularity per query).
+- [deferred-phase-4-followup] Multi-granularity chunking (small + large
+  chunks indexed together; reranker picks the right granularity per
+  query).
+- [deferred-phase-5] Cross-page section concatenation (a section
+  spanning pages 7-9 emerges as one chunk rather than three). Requires
+  carrying section state across page boundaries.
 """
 from __future__ import annotations
+
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,11 +47,12 @@ class Chunk(BaseModel):
 
     Attributes:
         chunk_id: Stable unique identifier within a corpus. Convention is
-            ``{corpus_name}:{document_name}:page-{N}`` for the MVP page-
-            based chunking. Future chunking strategies will use the same
-            namespace prefix and extend the suffix (e.g.,
-            ``osfi-e23:guideline-2023:section-3.2``). The id appears in
-            the LLM prompt and in the agent's reasoning.
+            ``{corpus_name}:{document_name}:page-{N}`` for the default
+            page-based chunking. Section-aware chunking extends the suffix
+            to ``{corpus_name}:{document_name}:page-{N}:section-{idx}``
+            where idx is 1-indexed section order within the page (or 0
+            for the pre-first-heading preamble). The id appears in the
+            LLM prompt and in the agent's reasoning.
         corpus_name: Short identifier for the regulation corpus, e.g.,
             ``osfi-e23``, ``nist-ai-rmf``, ``iso-42001``, ``eu-ai-act``,
             ``sox-icfr``. Free-form by design: deploying organizations
@@ -66,6 +69,13 @@ class Chunk(BaseModel):
         content_hash: SHA-256 of ``text``, formatted ``sha256:<hex>``.
             Lets a reviewer verify that the chunk an agent cited still
             holds the text the agent saw at decision time.
+        section_heading: Optional heading text for this chunk's section.
+            Populated when section-aware chunking detects a heading at
+            the start of the chunk's text range. None for default
+            page-based chunking, for sub-chunks that fall before the
+            first detected heading on a page, or when no headings are
+            detected. Audit-readable: "from Section 4.2: Independent
+            Validation" reads better than "page 15" in a reviewer note.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -76,3 +86,4 @@ class Chunk(BaseModel):
     page_number: int = Field(ge=1)
     text: str = Field(min_length=1)
     content_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    section_heading: Optional[str] = Field(default=None, max_length=256)

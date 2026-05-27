@@ -235,14 +235,91 @@ pip install 'sitkastack-vrt[vector]'
 Without the extra, `HashEmbedder` works but semantic retrieval does
 not.
 
+## Section-aware chunking (Phase 4.5)
+
+The default `CorpusLoader.load_pdf()` produces one Chunk per page. This works well for queries that target a regulation but it loses an audit signal: when the agent cites `osfi-e23:guideline-2023:page-15`, the reviewer must look up the PDF to know what's on page 15. "From Section 4.2: Independent Validation" reads better than "page 15" in a reviewer note.
+
+Section-aware chunking sub-divides each page by detected section headings. Each section becomes its own Chunk with the heading recorded on `section_heading`.
+
+```python
+from retrieval import CorpusLoader
+
+loader = CorpusLoader()
+chunks = loader.load_pdf(
+    corpus_name="osfi-e23",
+    document_name="guideline-2023-09-15",
+    content=pdf_bytes,
+    sectionize=True,
+)
+
+# Chunks now carry section context:
+for c in chunks:
+    print(f"{c.chunk_id}: section_heading={c.section_heading!r}")
+# osfi-e23:guideline-2023-09-15:page-3:section-1: section_heading='3.1 Roles and responsibilities'
+# osfi-e23:guideline-2023-09-15:page-3:section-2: section_heading='3.2 Documentation'
+```
+
+The `chunk_id` extends the page identifier: `:page-{N}:section-{idx}` where idx is 1-indexed section order within the page. Text appearing before the first detected heading on a page becomes a preamble chunk with `section-0`.
+
+### How detection works
+
+`retrieval.sectionizer.detect_sections(text, patterns=None)` scans text line-by-line, testing each stripped line against a set of compiled regex patterns. The first matching pattern marks the line as a section heading.
+
+The default pattern set (`DEFAULT_SECTION_PATTERNS`) recognizes the four major regulatory heading styles:
+
+1. Hierarchical numbered: `3.1 Roles and responsibilities`, `4.2.1 Subtitle`. Used by OSFI E-23, ISO 42001, ISO 27001, NIST AI RMF.
+2. Keyword + identifier: `Article 1`, `Section 302`, `Chapter 4`, `Annex III`, `Appendix A`. Used by EU AI Act, SOX, regulatory annexes.
+3. Top-level numbered with all-caps title: `4 OPERATIONAL FRAMEWORK`. A common variation in regulatory documents.
+4. Pure all-caps lines (9+ characters): `OPERATIONAL FRAMEWORK`, `MODEL GOVERNANCE`. Conservative threshold to avoid mis-matching short acronyms.
+
+The defaults are deliberately conservative. False positives (treating body text as headings) split chunks too aggressively and degrade retrieval. False negatives (missing real headings) just leave the page-based fallback in place. Defaults err toward false negatives.
+
+### Custom patterns
+
+Deploying organizations with idiosyncratic regulation formats pass their own pattern set:
+
+```python
+import re
+from retrieval import CorpusLoader
+
+custom = (
+    re.compile(r"^RULE \d+$"),
+    re.compile(r"^Schedule [A-Z]\b"),
+)
+
+chunks = loader.load_pdf(
+    corpus_name="internal-policy",
+    document_name="v1.2",
+    content=pdf_bytes,
+    sectionize=True,
+    section_patterns=custom,
+)
+```
+
+Patterns must be compiled `re.Pattern` objects. Each is matched against stripped lines; a successful `pattern.match(stripped_line)` marks the line as a heading.
+
+### When to use it
+
+Use section-aware chunking when:
+
+- The corpus is well-structured with consistent heading conventions (most major regulations qualify).
+- Queries are likely to reference specific sections by number or name.
+- Audit-trail readability matters more than indexing speed.
+
+Stick with the default page-based chunking when:
+
+- The corpus is text-dense with no consistent heading markers.
+- Page numbers are the primary citation unit in your jurisdiction.
+- You want to minimize the number of chunks in the index.
+
+Pages where no patterns match fall back to the page-based chunk automatically; mixing styles within a corpus is fine.
+
 ## Deferred
 
 Tagged for follow-up commits within sub-system 5:
 
 - `[deferred-subsystem-5-followup]` Persistent BM25 indexes (parquet
   format, lazy-loaded)
-- `[deferred-subsystem-5-followup]` Section-aware chunking (detect
-  headings, group by section)
 - `[deferred-subsystem-5-followup]` Real corpus manifest (URLs and
   fetch instructions for the five primary regulations, when
   redistribution terms allow)
@@ -251,6 +328,10 @@ Tagged for Phase 4 follow-up:
 
 - `[deferred-phase-4-followup]` Cross-encoder reranking
 - `[deferred-phase-4-followup]` Query expansion via thesaurus or LLM
+- `[deferred-phase-4-followup]` Sliding-window chunking (overlap N
+  tokens between adjacent chunks)
+- `[deferred-phase-4-followup]` Multi-granularity chunking (small +
+  large chunks indexed together; reranker picks granularity per query)
 
 Tagged for Phase 5:
 
@@ -259,3 +340,5 @@ Tagged for Phase 5:
 - `[deferred-phase-5]` Multi-tenant corpora (different deploying orgs
   index different regulation selections; the framework remains
   selection-agnostic)
+- `[deferred-phase-5]` Cross-page section concatenation (a section
+  spanning pages 7-9 emerges as one chunk rather than three)
