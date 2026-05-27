@@ -123,7 +123,7 @@ CORPUS_REGISTRY: Dict[str, CorpusSource] = {
     "nist-ai-rmf": CorpusSource(
         name="nist-ai-rmf",
         url="https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf",
-        sha256_hex="0" * 64,
+        sha256_hex="7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
         filename="nist-ai-rmf-100-1.pdf",
         document_name="100-1",
     ),
@@ -133,14 +133,14 @@ CORPUS_REGISTRY: Dict[str, CorpusSource] = {
             "https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/"
             "?uri=OJ:L_202401689"
         ),
-        sha256_hex="0" * 64,
+        sha256_hex="bba630444b3278e881066774002a1d7824308934f49ccfa203e65be43692f55e",
         filename="eu-ai-act-regulation-2024-1689-en.pdf",
         document_name="regulation-2024-1689",
     ),
     "sox-pl-107-204": CorpusSource(
         name="sox-pl-107-204",
         url="https://www.govinfo.gov/content/pkg/COMPS-1883/pdf/COMPS-1883.pdf",
-        sha256_hex="0" * 64,
+        sha256_hex="048689e26cf64023fa38849e3d1d20f61315b3257b0d18e3717b91c6c6c672eb",
         filename="sox-pl-107-204.pdf",
         document_name="pl-107-204",
     ),
