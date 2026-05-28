@@ -10,6 +10,12 @@ and the framework adheres to [Semantic Versioning](https://semver.org/)
 (pre-1.0: breaking changes may ride in minor bumps).
 
 
+## [0.10.0]
+
+_sub-system 10, Phase 7 SS1_
+
+tenant configuration model. New `tenancy` package with `TenantConfig` (per-tenant model routing, fallback models, circuit breaker, applicable regulation set, and free-form metadata) and `TenantRegistry` (lookup by tenant_id, duplicate rejection, JSON file loading). Supports the consultancy deployment model: one operator running triage for several client organizations with isolated configuration. Regulation sets are validated against the live corpus registry so a tenant cannot be configured for a regulation the framework has no corpus for. The SYSTEM_PROMPT stays uniform across all tenants by design: a per-tenant prompt would fork SYSTEM_PROMPT_HASH and break the property that every tenant's decisions trace to the identical version-pinned reasoning. This sub-system is the configuration foundation only: no agent integration and no schema change. The agent gaining tenant context and records gaining a required tenant_id field (the framework's first breaking schema change, output contract 1.2.0 -> 1.3.0) is SS2. Minor bump: new public package, no breaking change, no schema change.
+
 ## [0.9.1]
 
 _sub-system 9, Phase 6 SS5_

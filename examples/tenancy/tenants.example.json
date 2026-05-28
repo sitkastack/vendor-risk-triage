@@ -1,0 +1,44 @@
+{
+  "tenants": [
+    {
+      "tenant_id": "example-cdn-bank",
+      "display_name": "Example Canadian Bank",
+      "model": "anthropic:claude-sonnet-4-5",
+      "fallback_models": ["openai:gpt-5.4"],
+      "circuit_breaker": {
+        "failure_rate_threshold": 0.5,
+        "window_seconds": 60.0,
+        "cooldown_seconds": 30.0,
+        "minimum_calls": 5
+      },
+      "regulation_set": ["osfi-e23"],
+      "metadata": {
+        "jurisdiction": "CA",
+        "sector": "banking",
+        "note": "OSFI E-23 applies to federally regulated financial institutions."
+      }
+    },
+    {
+      "tenant_id": "example-us-issuer",
+      "display_name": "Example US-Listed Issuer",
+      "model": "anthropic:claude-sonnet-4-5",
+      "regulation_set": ["sox-pl-107-204", "nist-ai-rmf"],
+      "metadata": {
+        "jurisdiction": "US",
+        "sector": "public-company",
+        "note": "SOX for ICFR-relevant AI; NIST AI RMF as the risk framework."
+      }
+    },
+    {
+      "tenant_id": "example-eu-saas",
+      "display_name": "Example EU SaaS Vendor",
+      "model": "anthropic:claude-sonnet-4-5",
+      "regulation_set": ["eu-ai-act", "nist-ai-rmf"],
+      "metadata": {
+        "jurisdiction": "EU",
+        "sector": "software",
+        "note": "EU AI Act obligations; NIST AI RMF as the operating framework."
+      }
+    }
+  ]
+}

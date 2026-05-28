@@ -282,6 +282,7 @@ def test_coverage_packages_list_includes_resilience() -> None:
     """The coverage gate's package list stays in sync with the framework."""
     assert "resilience" in prepare_release._COVERAGE_PACKAGES
     assert "pricing" in prepare_release._COVERAGE_PACKAGES
+    assert "tenancy" in prepare_release._COVERAGE_PACKAGES
 
 
 def test_manual_reminders_nonempty() -> None:

@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.9.1"
+FRAMEWORK_VERSION: str = "0.10.0"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,24 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.10.0 (sub-system 10, Phase 7 SS1): tenant configuration model.
+  New ``tenancy`` package with ``TenantConfig`` (per-tenant model
+  routing, fallback models, circuit breaker, applicable regulation
+  set, and free-form metadata) and ``TenantRegistry`` (lookup by
+  tenant_id, duplicate rejection, JSON file loading). Supports the
+  consultancy deployment model: one operator running triage for
+  several client organizations with isolated configuration.
+  Regulation sets are validated against the live corpus registry so
+  a tenant cannot be configured for a regulation the framework has
+  no corpus for. The SYSTEM_PROMPT stays uniform across all tenants
+  by design: a per-tenant prompt would fork SYSTEM_PROMPT_HASH and
+  break the property that every tenant's decisions trace to the
+  identical version-pinned reasoning. This sub-system is the
+  configuration foundation only: no agent integration and no schema
+  change. The agent gaining tenant context and records gaining a
+  required tenant_id field (the framework's first breaking schema
+  change, output contract 1.2.0 -> 1.3.0) is SS2. Minor bump: new
+  public package, no breaking change, no schema change.
 - 0.9.1 (sub-system 9, Phase 6 SS5): release engineering tooling.
   New ``scripts/bump_version.py`` atomically bumps
   ``_version.FRAMEWORK_VERSION`` and the ``pyproject.toml`` version

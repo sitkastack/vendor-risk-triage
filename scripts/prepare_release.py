@@ -54,7 +54,7 @@ if str(_REPO_ROOT) not in sys.path:
 # package list updates it in one place.
 _COVERAGE_PACKAGES = [
     "_version", "agent", "cli", "eval", "ingestion", "observability",
-    "pricing", "resilience", "retrieval", "reporting",
+    "pricing", "resilience", "retrieval", "reporting", "tenancy",
 ]
 
 
