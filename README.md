@@ -12,7 +12,7 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 
 ## Status
 
-**Phases 0 through 4 are live. Phase 6 production-polish sub-systems are landing incrementally. The framework is feature-complete at the code level for vendor risk triage with full evaluation depth, observability, cost tracking, model fallback, and release tooling.**
+**Phases 0 through 7 are complete. The framework is code-complete for vendor risk triage: classification with full evaluation depth, observability, cost tracking, model fallback, release tooling, multi-tenancy, schema migration, and an end-to-end-verified pipeline.**
 
 | Phase | Status |
 |---|---|
@@ -22,9 +22,10 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 | Phase 3: Agent + RAG + Ingestion + Eval | live |
 | Phase 4: Eval Depth + Retrieval Quality | live |
 | Phase 5: Operational Hardening | live |
-| Phase 6: Production Polish | in progress |
+| Phase 6: Production Polish | live |
+| Phase 7: Multi-tenancy + Schema Migration | live |
 
-Current framework version: `0.12.0`. Test suite: 1315 tests, 100% coverage across twelve Python packages.
+Current framework version: `0.13.0`. Test suite: 1326 tests, 100% coverage across twelve Python packages. The full submission-to-audit-pack pipeline is verified end to end (`tests/test_e2e.py`); see `docs/end-to-end-example.md` for a narrated walkthrough.
 
 ## What's in this repository
 
@@ -74,6 +75,7 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/model-fallback-guide.md` covers automatic model fallback and circuit breaking: the `fallback_models` and `circuit_breaker` config, the breaker state machine, the observability signals, the pluggable state backend for multi-process deployments, the permissive failure-counting caveat, and the cost-tracking interaction.
 - `docs/multi-tenancy-guide.md` covers the per-tenant configuration model for the consultancy deployment: `TenantConfig`, `TenantRegistry`, the JSON config format, what is and is not per-tenant (and why the system prompt stays uniform), and the roadmap to tenant-scoped records.
 - `docs/migration-guide.md` covers up-migrating records across output-contract versions: when migration is needed, the additive-versus-tenancy hop distinction, the explicit tenant-assignment decision and resolvers, the `vrt migrate` CLI, input shapes, exit codes, and programmatic usage.
+- `docs/end-to-end-example.md` narrates the full pipeline on a single submission: tenant-scoped classification, the validated audit record, the eval controls running on real output, audit-pack rendering, and migration. The composition it shows is verified by the end-to-end regression suite.
 - `docs/maintenance-workflow.md` documents the procedures for maintainers: version bumps, SYSTEM_PROMPT updates, corpus refreshes, price table refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist
 - `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale
@@ -153,6 +155,10 @@ Every code commit lands with:
 - Three stability runs of the full test suite at the same passing count
 
 Coverage and tests are enforced in CI. The audit discipline is enforced by the author.
+
+### End-to-end regression
+
+Beyond the per-package unit suites, `tests/test_e2e.py` verifies that the twelve packages *compose* into a working pipeline: a submission flows through tenant-scoped classification, output-contract validation, the eval controls (citation verification, calibration, judge) running on the agent's real output, audit-pack rendering, and migration, with the artifacts asserted consistent across every stage boundary. One scenario invokes the installed `vrt` console script as a real subprocess to catch packaging and entry-point regressions. These run in the default suite (they use a deterministic model, not a live LLM). The narrated version is `docs/end-to-end-example.md`.
 
 ### Integration tests against real corpora
 

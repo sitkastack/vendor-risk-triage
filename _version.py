@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.12.0"
+FRAMEWORK_VERSION: str = "0.13.0"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,33 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.13.0 (Phase 7 close-out): end-to-end regression suite and the
+  code-complete milestone. New ``tests/test_e2e.py`` verifies that
+  the framework's twelve packages compose into a working pipeline
+  (not just that each works in isolation), with five scenario groups:
+  the golden tenant-scoped pipeline (submission -> triage -> validate
+  -> render, attribution carried end to end); the eval pipeline run
+  on real agent output (citation verification, calibration, and the
+  judge all accept a record the agent actually emitted, catching
+  drift between what the agent produces and what the eval components
+  expect); a migration round-trip (a pre-tenancy record migrated
+  forward renders and validates identically to a natively-produced
+  1.3.0 record, and migration preserves the decision content); the
+  multi-tenant attribution and audit invariant (two tenants produce
+  correctly-attributed records sharing one identical
+  SYSTEM_PROMPT_HASH); and a real-subprocess CLI chain (the installed
+  ``vrt`` console script runs migrate and render through actual
+  files, catching packaging and entry-point regressions in-process
+  tests cannot). The suite passed clean on the first run: the
+  framework composes with no integration seams. New
+  ``docs/end-to-end-example.md`` walks the full pipeline with real
+  shapes, doubling as demo and onboarding material. New
+  ``e2e_subprocess`` pytest marker (registered, runs by default;
+  requires the package installed). With this, the framework is
+  code-complete for the vendor risk triage build: every planned
+  sub-system across Phases 0 through 7 is shipped, and the end-to-end
+  pipeline is verified. Minor bump: additive test suite and docs, no
+  code change to the framework itself.
 - 0.12.0 (sub-system 12, Phase 7 SS3): schema migration engine and
   the ``vrt migrate`` CLI subcommand. New ``migration`` package
   up-migrates triage records across the output-contract version
