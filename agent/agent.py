@@ -79,7 +79,7 @@ import hashlib
 import json
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -388,12 +388,30 @@ class TriageAgentConfig:
             wanting observability construct a bundle with configured
             event_logger, metrics, and tracer sinks. See
             ``docs/observability-guide.md`` for the integration guide.
+        fallback_models: Optional list of PydanticAI-style
+            ``provider:model`` identifiers to try when the primary
+            ``model`` fails. Empty list (the default) disables
+            fallback; the agent's behavior is unchanged from prior
+            framework versions. When the list is non-empty, the agent
+            tries primary first; on any exception, it tries fallbacks
+            in order. Combine with ``circuit_breaker`` for full L4
+            behavior. See ``docs/model-fallback-guide.md``.
+        circuit_breaker: Optional ``CircuitBreakerConfig`` for tracking
+            per-model failure rates. None (the default) disables the
+            breaker. When configured, the agent maintains a breaker
+            per model: failures count toward an opening threshold;
+            opened breakers skip the model until cooldown elapses;
+            half-open trials either restore the model or re-open the
+            breaker. Failure counting is permissive: any exception
+            counts (auth errors, validation errors, provider errors).
     """
 
     model: Any = DEFAULT_MODEL
     retries: int = 2
     system_prompt: Optional[str] = None
-    observability: Optional[Any] = None  # Optional["Observability"] - typed as Any to avoid the import cost when observability is disabled
+    observability: Optional[Any] = None  # Optional["Observability"]
+    fallback_models: list[Any] = field(default_factory=list)  # list of PydanticAI model identifiers (strings) or Model instances
+    circuit_breaker: Optional[Any] = None  # Optional["CircuitBreakerConfig"]
 
 
 class TriageAgent:
@@ -464,6 +482,35 @@ class TriageAgent:
             self._config.model, active_prompt_hash,
         )
 
+        # Fallback agents: one PydanticAI Agent per configured fallback
+        # model. Eagerly constructed so any per-model setup error
+        # surfaces at agent construction time rather than at first
+        # fallback invocation. Storage is a list of (model_id_string,
+        # Agent) tuples so the agent's call site has both the
+        # identifier (for observability and breaker keying) and the
+        # Agent instance to invoke.
+        self._fallback_agents: list[tuple[str, Agent[None, _TriageClassification]]] = []
+        for fallback_model in self._config.fallback_models:
+            fallback_agent: Agent[None, _TriageClassification] = Agent(
+                model=fallback_model,
+                output_type=_TriageClassification,
+                system_prompt=active_prompt,
+                retries=self._config.retries,
+            )
+            self._fallback_agents.append((str(fallback_model), fallback_agent))
+
+        # Circuit breaker: optional. When configured, the agent
+        # consults the breaker before each LLM call and updates it
+        # with success/failure outcomes. When not configured, all
+        # calls go through unconditionally (matching pre-0.9.0
+        # behavior).
+        self._circuit_breaker = None
+        if self._config.circuit_breaker is not None:
+            from resilience import CircuitBreaker
+            self._circuit_breaker = CircuitBreaker(
+                config=self._config.circuit_breaker,
+            )
+
         # Observability: store the bundle (or build a silent default).
         # Lazy import keeps the framework's noop case free of cost when
         # observability is disabled.
@@ -513,13 +560,23 @@ class TriageAgent:
         self,
         result: Any,
         correlation_id: str,
+        effective_model_id: Optional[str] = None,
     ) -> Optional["CostEstimate"]:
         """Build a CostEstimate from the LLM result, or return None.
 
-        Looks up the configured model_id in the framework's price
+        Looks up the effective model_id in the framework's price
         table. When the model is unknown (FunctionModel, TestModel,
         or any model not in the published table), returns None and
         the TriageRecord's cost_estimate field stays absent.
+
+        Args:
+            result: The PydanticAI result with usage data.
+            correlation_id: Correlation ID for the operation.
+            effective_model_id: The model that actually produced the
+                result. May differ from ``self._config.model`` when
+                fallback was triggered. Defaults to the configured
+                primary model when not specified (backwards-compatible
+                behavior for callers that don't use fallback).
 
         Always emits the llm.call.cost_recorded observability event
         and increments the vrt_llm_tokens_total histograms, even when
@@ -551,7 +608,7 @@ class TriageAgent:
             except (AttributeError, TypeError, ValueError):
                 return None
 
-        model_id = str(self._config.model)
+        model_id = effective_model_id if effective_model_id is not None else str(self._config.model)
         from pricing import compute_cost, PRICE_TABLE_VERSION, lookup_price
         from observability.events import EventStatus
 
@@ -616,6 +673,244 @@ class TriageAgent:
             },
         )
         return cost_estimate_obj
+
+    def _run_with_fallback(
+        self,
+        prompt: str,
+        correlation_id: str,
+        outer_span: Any,
+    ) -> tuple[Any, str]:
+        """Run the LLM call, falling back through configured alternates.
+
+        Tries the primary model first (skipping if its breaker is
+        OPEN). On exception or breaker-skip, tries each fallback in
+        order. Records success/failure with the breaker (if
+        configured), emits observability events at each step
+        (llm.call.started, llm.call.completed, llm.call.fallback_triggered,
+        circuit_breaker.opened, circuit_breaker.half_opened,
+        circuit_breaker.closed), and increments related metrics.
+
+        Returns the (result, effective_model_id) tuple of the model
+        that successfully produced the result. Raises the last
+        exception encountered if all configured models failed.
+
+        The "vrt.llm_call" span is opened per attempt so a trace
+        viewer shows each model's attempt as a distinct child of the
+        vrt.triage root span.
+        """
+        from observability.events import EventStatus
+        from resilience import CircuitState
+
+        # Build the candidate list: primary first, then fallbacks.
+        # Each entry is (model_id, pydantic_agent, is_primary).
+        primary_model_id = str(self._config.model)
+        candidates: list[tuple[str, Any, bool]] = [
+            (primary_model_id, self._pydantic_agent, True),
+        ]
+        for fallback_model_id, fallback_agent in self._fallback_agents:
+            candidates.append((fallback_model_id, fallback_agent, False))
+
+        last_error: Optional[Exception] = None
+
+        for attempt_index, (model_id, pydantic_agent, is_primary) in enumerate(candidates):
+            # Breaker check: skip this model if its breaker is OPEN.
+            if self._circuit_breaker is not None:
+                # Read the raw store state BEFORE should_attempt, so we
+                # can detect a fresh OPEN -> HALF_OPEN transition that
+                # should_attempt commits as a side effect.
+                pre_store_state = self._circuit_breaker.store.get_health(model_id).state
+                should_attempt = self._circuit_breaker.should_attempt(model_id)
+                post_store_state = self._circuit_breaker.store.get_health(model_id).state
+
+                # Detect the OPEN -> HALF_OPEN transition that
+                # should_attempt may have just committed.
+                if pre_store_state == CircuitState.OPEN and post_store_state == CircuitState.HALF_OPEN:
+                    self._observability.emit_event(
+                        "circuit_breaker.half_opened",
+                        status=EventStatus.SUCCESS,
+                        correlation_id=correlation_id,
+                        attributes={"model": model_id},
+                    )
+                    self._observability.counter_inc(
+                        "vrt_circuit_state_changes_total",
+                        labels={
+                            "model": model_id,
+                            "from_state": "open",
+                            "to_state": "half_open",
+                        },
+                    )
+
+                if not should_attempt:
+                    # Emit a fallback_triggered event so observers can
+                    # see that the breaker caused the skip. Note: for
+                    # the primary, this is the FIRST signal that we're
+                    # falling back (no llm.call.started fired yet).
+                    self._observability.emit_event(
+                        "llm.call.fallback_triggered",
+                        status=EventStatus.SUCCESS,
+                        correlation_id=correlation_id,
+                        attributes={
+                            "skipped_model": model_id,
+                            "primary_model": primary_model_id,
+                            "reason": "circuit_breaker_open",
+                            "attempt_index": attempt_index,
+                        },
+                    )
+                    self._observability.counter_inc(
+                        "vrt_llm_fallback_total",
+                        labels={
+                            "primary": primary_model_id,
+                            "skipped": model_id,
+                            "reason": "circuit_breaker_open",
+                        },
+                    )
+                    continue
+
+            # If this is not the primary AND we got here because a
+            # previous attempt failed (last_error is set), emit a
+            # fallback_triggered event. (For breaker-skipped primaries,
+            # the event was already emitted in the skip branch above.)
+            if not is_primary and last_error is not None:
+                self._observability.emit_event(
+                    "llm.call.fallback_triggered",
+                    status=EventStatus.SUCCESS,
+                    correlation_id=correlation_id,
+                    attributes={
+                        "fallback_model": model_id,
+                        "primary_model": primary_model_id,
+                        "trigger_error_type": type(last_error).__name__,
+                        "attempt_index": attempt_index,
+                    },
+                )
+                self._observability.counter_inc(
+                    "vrt_llm_fallback_total",
+                    labels={
+                        "primary": primary_model_id,
+                        "fallback": model_id,
+                        "reason": type(last_error).__name__,
+                    },
+                )
+
+            # Make the call.
+            llm_start_time = time.time()
+            self._observability.emit_event(
+                "llm.call.started",
+                status=EventStatus.IN_PROGRESS,
+                correlation_id=correlation_id,
+                attributes={"model": model_id},
+            )
+
+            try:
+                with self._observability.start_span(
+                    "vrt.llm_call",
+                    attributes={"vrt.model": model_id},
+                ):
+                    result = pydantic_agent.run_sync(prompt)
+                llm_duration = time.time() - llm_start_time
+
+                self._observability.emit_event(
+                    "llm.call.completed",
+                    status=EventStatus.SUCCESS,
+                    correlation_id=correlation_id,
+                    duration_ms=llm_duration * 1000,
+                    attributes={"model": model_id},
+                )
+                self._observability.counter_inc(
+                    "vrt_llm_call_total",
+                    labels={"status": "success"},
+                )
+                self._observability.histogram_observe(
+                    "vrt_llm_call_duration_seconds",
+                    llm_duration,
+                )
+
+                # Record success with the breaker. May transition
+                # HALF_OPEN -> CLOSED, in which case emit the event.
+                if self._circuit_breaker is not None:
+                    new_state = self._circuit_breaker.record_success(model_id)
+                    if new_state == CircuitState.CLOSED:
+                        self._observability.emit_event(
+                            "circuit_breaker.closed",
+                            status=EventStatus.SUCCESS,
+                            correlation_id=correlation_id,
+                            attributes={"model": model_id},
+                        )
+                        self._observability.counter_inc(
+                            "vrt_circuit_state_changes_total",
+                            labels={
+                                "model": model_id,
+                                "from_state": "half_open",
+                                "to_state": "closed",
+                            },
+                        )
+
+                return result, model_id
+
+            except Exception as exc:
+                llm_duration = time.time() - llm_start_time
+                self._observability.emit_event(
+                    "llm.call.completed",
+                    status=EventStatus.ERROR,
+                    correlation_id=correlation_id,
+                    duration_ms=llm_duration * 1000,
+                    attributes={
+                        "model": model_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                self._observability.counter_inc(
+                    "vrt_llm_call_total",
+                    labels={"status": "error"},
+                )
+                self._observability.counter_inc(
+                    "vrt_llm_errors_total",
+                    labels={"error_type": type(exc).__name__},
+                )
+
+                # Record failure with the breaker. May transition
+                # CLOSED -> OPEN or HALF_OPEN -> OPEN.
+                if self._circuit_breaker is not None:
+                    new_state = self._circuit_breaker.record_failure(model_id)
+                    if new_state == CircuitState.OPEN:
+                        # Determine the prior state for the event
+                        # (we know it was either CLOSED or HALF_OPEN
+                        # because record_failure only returns OPEN
+                        # when transitioning from one of those).
+                        self._observability.emit_event(
+                            "circuit_breaker.opened",
+                            status=EventStatus.SUCCESS,
+                            correlation_id=correlation_id,
+                            attributes={
+                                "model": model_id,
+                                "error_type": type(exc).__name__,
+                            },
+                        )
+                        self._observability.counter_inc(
+                            "vrt_circuit_state_changes_total",
+                            labels={
+                                "model": model_id,
+                                "to_state": "open",
+                            },
+                        )
+
+                last_error = exc
+                # Continue to next candidate.
+
+        # All candidates exhausted. Raise the last error.
+        if last_error is None:
+            # Defensive: should be unreachable. The candidate list
+            # always includes primary, so at least one attempt happens
+            # unless the breaker blocked every model. In the all-
+            # blocked case, last_error stays None and we need a clear
+            # error.
+            raise RuntimeError(
+                f"All configured models had open circuit breakers; "
+                f"primary={primary_model_id}, "
+                f"fallbacks={[m for m, _ in self._fallback_agents]}. "
+                f"No attempts were made. Investigate provider health "
+                f"or breaker thresholds."
+            )
+        raise last_error
 
     def triage(
         self,
@@ -771,44 +1066,24 @@ class TriageAgent:
                     "vrt.framework_version": FRAMEWORK_VERSION,
                 },
             ) as span:
-                # LLM call: timed and wrapped in a child span
+                # LLM call: timed at the outer level for the
+                # completed-call total duration metric; per-attempt
+                # events and metrics are emitted by
+                # _run_with_fallback.
                 llm_start_time = time.time()
-                self._observability.emit_event(
-                    "llm.call.started",
-                    status=EventStatus.IN_PROGRESS,
-                    correlation_id=correlation_id,
-                    attributes={"model": str(self._config.model)},
-                )
                 try:
-                    with self._observability.start_span(
-                        "vrt.llm_call",
-                        attributes={"vrt.model": str(self._config.model)},
-                    ):
-                        result = self._pydantic_agent.run_sync(
-                            _format_user_prompt(
-                                submission, documents, regulation_chunks
-                            )
-                        )
-                    llm_duration = time.time() - llm_start_time
-                    self._observability.emit_event(
-                        "llm.call.completed",
-                        status=EventStatus.SUCCESS,
+                    result, effective_model_id = self._run_with_fallback(
+                        prompt=_format_user_prompt(
+                            submission, documents, regulation_chunks,
+                        ),
                         correlation_id=correlation_id,
-                        duration_ms=llm_duration * 1000,
-                        attributes={"model": str(self._config.model)},
+                        outer_span=span,
                     )
-                    self._observability.counter_inc(
-                        "vrt_llm_call_total",
-                        labels={"status": "success"},
-                    )
-                    self._observability.histogram_observe(
-                        "vrt_llm_call_duration_seconds",
-                        llm_duration,
-                    )
+                    llm_duration = time.time() - llm_start_time
 
                     # Cost capture: pull token usage from the LLM result
                     # and resolve to a dollar figure via the price table.
-                    # When the configured model is not in the table
+                    # When the effective model is not in the table
                     # (FunctionModel, TestModel, or any model the
                     # framework does not publish prices for),
                     # cost_estimate stays None and the record omits
@@ -816,27 +1091,13 @@ class TriageAgent:
                     # cost data is best-effort, never required.
                     cost_estimate_obj = self._capture_cost_estimate(
                         result, correlation_id,
+                        effective_model_id=effective_model_id,
                     )
                 except Exception as exc:
-                    llm_duration = time.time() - llm_start_time
-                    self._observability.emit_event(
-                        "llm.call.completed",
-                        status=EventStatus.ERROR,
-                        correlation_id=correlation_id,
-                        duration_ms=llm_duration * 1000,
-                        attributes={
-                            "model": str(self._config.model),
-                            "error_type": type(exc).__name__,
-                        },
-                    )
-                    self._observability.counter_inc(
-                        "vrt_llm_call_total",
-                        labels={"status": "error"},
-                    )
-                    self._observability.counter_inc(
-                        "vrt_llm_errors_total",
-                        labels={"error_type": type(exc).__name__},
-                    )
+                    # _run_with_fallback already emitted observability
+                    # events and metrics for each individual attempt;
+                    # we just need to record the span error and
+                    # re-raise.
                     span.record_error(exc)
                     raise
 

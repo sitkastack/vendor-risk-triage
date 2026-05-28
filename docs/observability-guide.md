@@ -8,7 +8,7 @@ The framework's default is silent: a deployment that does nothing sees no observ
 
 Every triage operation emits three classes of observability signals:
 
-**Events** are structured records describing what happened. The framework emits thirteen event names, each with a documented shape: `agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `llm.call.cost_recorded`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`. Each event includes a timestamp, status, optional duration_ms, optional correlation_id, and an attributes dict.
+**Events** are structured records describing what happened. The framework emits seventeen event names, each with a documented shape: `agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `llm.call.cost_recorded`, `llm.call.fallback_triggered`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`, `circuit_breaker.opened`, `circuit_breaker.half_opened`, `circuit_breaker.closed`. Each event includes a timestamp, status, optional duration_ms, optional correlation_id, and an attributes dict.
 
 **Metrics** are numeric observations: counters for things happening, histograms for distributions, gauges for point-in-time values. The framework defines ten built-in metric names with bounded label cardinality, suitable for Prometheus, StatsD, or OpenTelemetry collectors.
 
@@ -91,6 +91,10 @@ The event names are part of the framework's public surface as of 0.7.0. Renames 
 
 `llm.call.cost_recorded` fires after a successful LLM call (added in 0.8.0). Attributes: `model_id`, `input_tokens`, `output_tokens`, `estimated_cost_usd`, `price_table_version`, plus `reason` when the model is not in the price table (set to `model_id_not_in_price_table`). The event fires for both known and unknown models so deployments can aggregate token usage across all model configurations; the dollar figure is null for unknown models. Use this event to track LLM spend per triage operation.
 
+`llm.call.fallback_triggered` fires when the agent is about to try a fallback model, or when it skips a model because that model's circuit breaker is open (added in 0.9.0). Attributes: `fallback_model` (when falling back after a failure) or `skipped_model` (when skipping an open breaker), `primary_model`, `trigger_error_type` (the exception that caused the fallback) or `reason=circuit_breaker_open`, and `attempt_index`. See `docs/model-fallback-guide.md`.
+
+`circuit_breaker.opened`, `circuit_breaker.half_opened`, and `circuit_breaker.closed` fire on breaker state transitions (added in 0.9.0). The opened event includes `model` and `error_type`; half_opened and closed include `model`. These track which providers the framework considers healthy. See `docs/model-fallback-guide.md`.
+
 `validation.started` and `validation.completed` bracket TriageRecord validation. Useful for diagnosing whether classification failures are LLM errors or schema-validation errors.
 
 `retrieval.started` and `retrieval.completed` are reserved for future retrieval observability; the framework emits them when retrieval is invoked through observability-aware retriever wrappers (a Phase 6 SS4 deliverable). Phase 6 SS2 ships the event names but does not emit them from the agent's `triage()` path because retrieval is caller-driven; deployments that want to track retrieval emit these events themselves around their `Retriever.search()` calls.
@@ -149,7 +153,7 @@ class Metrics(Protocol):
 
 `counter_inc` records a monotonic increment. `histogram_observe` records one observation of a distribution. `gauge_set` records a point-in-time value. The three primitives map cleanly onto Prometheus, StatsD, OpenTelemetry metrics, and most other metrics libraries.
 
-### Twelve built-in metric names
+### Fourteen built-in metric names
 
 Counters (monotonic; reset only on process restart):
 
@@ -157,6 +161,8 @@ Counters (monotonic; reset only on process restart):
 - `vrt_llm_call_total{status}`: count of LLM provider calls, labeled by status (success, error).
 - `vrt_llm_errors_total{error_type}`: count of LLM errors, labeled by Python exception class name.
 - `vrt_llm_cost_usd_total{model, status}`: cumulative LLM spend in USD (added in 0.8.0), labeled by model_id and status. Only incremented for models in the framework's price table; unknown models do not contribute to this counter but their token counts still appear in `vrt_llm_tokens_total`.
+- `vrt_llm_fallback_total{primary, fallback, reason}`: count of fallback events (added in 0.9.0), labeled by primary model, fallback model (or `skipped` model for breaker-skips), and reason (the triggering error type, or `circuit_breaker_open`).
+- `vrt_circuit_state_changes_total{model, from_state, to_state}`: count of circuit breaker state transitions (added in 0.9.0), labeled by model and the from/to states.
 - `vrt_validation_errors_total{error_type}`: count of validation failures, labeled by error type.
 - `vrt_drift_runs_total{outcome}`: count of drift check runs, labeled by outcome (no_drift, soft_drift, hard_drift).
 
@@ -398,7 +404,7 @@ For deployments persisting records to a database, ensure the `correlation_id` co
 
 ## Versioning and stability
 
-The observability surface is part of the framework's public commitment as of 0.7.0. As of 0.8.0, the thirteen event names, twelve metric names, and five span names are stable. Renames or removals require a major version bump per `docs/maintenance-workflow.md`.
+The observability surface is part of the framework's public commitment as of 0.7.0. As of 0.9.0, the seventeen event names, fourteen metric names, and five span names are stable. Renames or removals require a major version bump per `docs/maintenance-workflow.md`.
 
 New events, new metrics, and new spans can ship in minor versions. Deployments depending on specific event names should write code defensively (filter for the names they expect, ignore unknown names) rather than treating the framework's emissions as a closed schema.
 

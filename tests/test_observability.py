@@ -65,10 +65,13 @@ def test_event_name_values_stable() -> None:
     expected = {
         "agent.constructed", "triage.started", "triage.completed",
         "llm.call.started", "llm.call.completed", "llm.call.cost_recorded",
+        "llm.call.fallback_triggered",
         "retrieval.started", "retrieval.completed",
         "validation.started", "validation.completed",
         "drift.check.started", "drift.check.completed",
         "audit_pack.rendered",
+        "circuit_breaker.opened", "circuit_breaker.half_opened",
+        "circuit_breaker.closed",
     }
     actual = {member.value for member in EventName}
     assert actual == expected

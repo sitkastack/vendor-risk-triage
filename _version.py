@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.8.1"
+FRAMEWORK_VERSION: str = "0.9.0"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,27 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.9.0 (sub-system 8, Phase 6 SS4): model fallback with circuit
+  breaker. New ``resilience`` package with CircuitBreaker,
+  CircuitBreakerConfig, CircuitState, ModelHealth, BreakerStateStore
+  protocol, and InMemoryBreakerStateStore. TriageAgentConfig gains
+  ``fallback_models`` (list of model identifiers tried in order when
+  primary fails) and ``circuit_breaker`` (optional config enabling
+  per-model failure tracking). When configured, the agent tries
+  primary first, falls back through alternates on failure, and
+  tracks each model's health: failures count toward an opening
+  threshold (50% over 60s default), opened breakers skip the model
+  until cooldown (30s default), half-open trials restore or re-open.
+  Failure counting is permissive (any exception counts). State
+  storage is pluggable via the BreakerStateStore protocol; default
+  is in-memory. Four new observability events
+  (llm.call.fallback_triggered, circuit_breaker.opened,
+  circuit_breaker.half_opened, circuit_breaker.closed) and three new
+  metrics (vrt_llm_fallback_total, vrt_circuit_state_changes_total,
+  and the existing vrt_llm_* families gain fallback-model labels).
+  Default behavior unchanged: empty fallback_models + None
+  circuit_breaker means identical behavior to 0.8.1. No schema
+  change; cost_estimate records the effective (fallback) model.
 - 0.8.1 (sub-system 7B, Phase 6 SS3-B): cost budget gate. Adds
   ``--cost-budget DOLLARS`` and ``--max-output-tokens N`` flags to
   ``vrt triage``. The flags must be specified together; the gate

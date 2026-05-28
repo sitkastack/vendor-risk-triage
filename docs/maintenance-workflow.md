@@ -51,14 +51,15 @@ The CLI is invoked through two paths: the installed `vrt` console script (regist
 
 ### Observability surface compatibility
 
-As of `0.7.0`, the framework emits a defined set of observability signals through the `observability` package. As of `0.8.0`, the surface is extended with one additional event name (`llm.call.cost_recorded`) and two additional metric names (`vrt_llm_cost_usd_total`, `vrt_llm_tokens_total`):
+As of `0.7.0`, the framework emits a defined set of observability signals through the `observability` package. The surface has grown additively: `0.8.0` added `llm.call.cost_recorded` plus `vrt_llm_cost_usd_total` and `vrt_llm_tokens_total`; `0.9.0` added `llm.call.fallback_triggered`, `circuit_breaker.opened`, `circuit_breaker.half_opened`, `circuit_breaker.closed`, plus `vrt_llm_fallback_total` and `vrt_circuit_state_changes_total`:
 
-- Thirteen event names (`agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `llm.call.cost_recorded`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`)
-- Twelve metric names (the `vrt_*` family documented in `docs/observability-guide.md`, plus `vrt_llm_cost_usd_total` and `vrt_llm_tokens_total` added in 0.8.0)
+- Seventeen event names (`agent.constructed`, `triage.started`, `triage.completed`, `llm.call.started`, `llm.call.completed`, `llm.call.cost_recorded`, `llm.call.fallback_triggered`, `retrieval.started`, `retrieval.completed`, `validation.started`, `validation.completed`, `drift.check.started`, `drift.check.completed`, `audit_pack.rendered`, `circuit_breaker.opened`, `circuit_breaker.half_opened`, `circuit_breaker.closed`)
+- Fourteen metric names (the `vrt_*` family documented in `docs/observability-guide.md`)
 - Five span names (`vrt.triage`, `vrt.llm_call`, `vrt.retrieval`, `vrt.validation`, `vrt.audit_pack.render`)
 - The three Protocol interfaces (`EventLogger`, `Metrics`, `Tracer`)
 - The `correlation_id` field on `TriageRecord` (optional, 16-character lowercase hex when populated)
 - The `cost_estimate` field on `TriageRecord` (optional nested object; absent when the framework cannot resolve the configured model_id to a known price entry)
+- The `resilience` package public surface (CircuitBreaker, CircuitBreakerConfig, CircuitState, ModelHealth, BreakerStateStore, InMemoryBreakerStateStore) and the `fallback_models` / `circuit_breaker` fields on TriageAgentConfig
 
 Renames or removals to any of these are breaking changes requiring a major version bump. Additions are minor bumps. Adding methods to the Protocol interfaces is a breaking change for any deployment with custom implementations.
 

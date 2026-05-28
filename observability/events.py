@@ -90,6 +90,7 @@ class EventName(str, Enum):
     LLM_CALL_STARTED = "llm.call.started"
     LLM_CALL_COMPLETED = "llm.call.completed"
     LLM_CALL_COST_RECORDED = "llm.call.cost_recorded"
+    LLM_CALL_FALLBACK_TRIGGERED = "llm.call.fallback_triggered"
     RETRIEVAL_STARTED = "retrieval.started"
     RETRIEVAL_COMPLETED = "retrieval.completed"
     VALIDATION_STARTED = "validation.started"
@@ -97,6 +98,9 @@ class EventName(str, Enum):
     DRIFT_CHECK_STARTED = "drift.check.started"
     DRIFT_CHECK_COMPLETED = "drift.check.completed"
     AUDIT_PACK_RENDERED = "audit_pack.rendered"
+    CIRCUIT_BREAKER_OPENED = "circuit_breaker.opened"
+    CIRCUIT_BREAKER_HALF_OPENED = "circuit_breaker.half_opened"
+    CIRCUIT_BREAKER_CLOSED = "circuit_breaker.closed"
 
 
 class EventStatus(str, Enum):

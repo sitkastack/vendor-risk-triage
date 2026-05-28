@@ -1,6 +1,6 @@
 [project]
 name = "vendor-risk-triage"
-version = "0.8.1"
+version = "0.9.0"
 description = "Reference implementation of an AI agent for vendor risk triage. Part of the sitkastack Framework."
 requires-python = ">=3.11"
 authors = [{name = "Robyn Toor", email = "robyn@sitkastack.com"}]
@@ -36,7 +36,7 @@ vrt = "cli.dispatcher:main"
 # the "src layout" assumption and fails to find the flat-layout packages
 # at the repo root. The framework intentionally uses flat layout
 # because it has multiple top-level packages and a top-level _version.py.
-packages = ["agent", "cli", "eval", "eval.attacks", "eval.calibration", "eval.citations", "eval.drift", "eval.judge", "ingestion", "observability", "pricing", "reporting", "retrieval", "scripts"]
+packages = ["agent", "cli", "eval", "eval.attacks", "eval.calibration", "eval.citations", "eval.drift", "eval.judge", "ingestion", "observability", "pricing", "reporting", "resilience", "retrieval", "scripts"]
 py-modules = ["_version"]
 
 [tool.pytest.ini_options]
