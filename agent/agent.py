@@ -77,9 +77,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -90,6 +91,7 @@ from pydantic_ai.models import Model
 from agent.output_models import (
     ConfidenceSignal,
     CostEstimate,
+    DEFAULT_TENANT_ID,
     Disposition,
     EvidenceCitation,
     FrameworkTag,
@@ -123,11 +125,13 @@ __all__ = [
 # constructing an agent. FRAMEWORK_VERSION is imported at the top of the
 # module from the canonical _version source.
 
-OUTPUT_SCHEMA_VERSION: str = "1.2.0"
+OUTPUT_SCHEMA_VERSION: str = "1.3.0"
 """Semver of the output contract this agent emits to.
 
 Locked to the Phase 1 contract at ``schemas/output-contract-1.0.0.schema.json``.
 """
+
+_logger = logging.getLogger("vrt.agent")
 
 DEFAULT_MODEL: str = "anthropic:claude-sonnet-4-5"
 """Default model identifier in PydanticAI's provider:model format.
@@ -412,6 +416,7 @@ class TriageAgentConfig:
     observability: Optional[Any] = None  # Optional["Observability"]
     fallback_models: list[Any] = field(default_factory=list)  # list of PydanticAI model identifiers (strings) or Model instances
     circuit_breaker: Optional[Any] = None  # Optional["CircuitBreakerConfig"]
+    tenant: Optional[Any] = None  # Optional["TenantConfig"]: when set, the agent sources model routing from it and stamps records with its tenant_id
 
 
 class TriageAgent:
@@ -464,6 +469,47 @@ class TriageAgent:
                 logging, metrics, and tracing; defaults to silent.
         """
         self._config: TriageAgentConfig = config if config is not None else TriageAgentConfig()
+
+        # Tenant resolution. When a TenantConfig is provided, it is the
+        # source of truth for this agent's model routing and tenant
+        # identity (decision C1: one agent per tenant). A tenant's
+        # model / fallback_models / circuit_breaker populate the
+        # corresponding config fields when those were not explicitly
+        # set on the config, so a caller can build an agent purely from
+        # a tenant. Explicit config values still win if both are given
+        # (explicit-over-implicit), which lets a caller override one
+        # facet of a tenant's routing without redefining the tenant.
+        self._tenant_id: str = DEFAULT_TENANT_ID
+        tenant = self._config.tenant
+        if tenant is not None:
+            self._tenant_id = tenant.tenant_id
+            if self._config.model is DEFAULT_MODEL and tenant.model is not None:
+                # The config is using the framework default and the
+                # tenant specifies a model: adopt the tenant's.
+                self._config = replace(self._config, model=tenant.model)
+            if not self._config.fallback_models and tenant.fallback_models:
+                self._config = replace(
+                    self._config,
+                    fallback_models=list(tenant.fallback_models),
+                )
+            if self._config.circuit_breaker is None and tenant.circuit_breaker is not None:
+                self._config = replace(
+                    self._config, circuit_breaker=tenant.circuit_breaker,
+                )
+        else:
+            # No tenant configured: stamp the sentinel and warn. The
+            # warning is the "loud" half of decision B2: single-org use
+            # is frictionless, but an accidental missing tenant in a
+            # multi-tenant deployment leaves an auditable trail.
+            _logger.warning(
+                "TriageAgent constructed without a tenant; records will "
+                "be stamped with the sentinel tenant_id %r. This is "
+                "expected for single-organization deployments. If this "
+                "is a multi-tenant deployment, a missing tenant "
+                "indicates an unconfigured agent.",
+                DEFAULT_TENANT_ID,
+            )
+
         active_prompt: str = (
             self._config.system_prompt
             if self._config.system_prompt is not None
@@ -531,6 +577,7 @@ class TriageAgent:
                 "framework_version": FRAMEWORK_VERSION,
                 "system_prompt_hash": active_prompt_hash,
                 "retries": self._config.retries,
+                "tenant_id": self._tenant_id,
             },
         )
         self._observability.gauge_set(
@@ -546,6 +593,52 @@ class TriageAgent:
     def agent_version(self) -> str:
         """The agent_version string this agent writes into every TriageRecord."""
         return self._agent_version
+
+    @property
+    def tenant_id(self) -> str:
+        """The tenant_id this agent stamps into every TriageRecord.
+
+        Equal to the configured tenant's id, or DEFAULT_TENANT_ID when
+        the agent was constructed without a tenant.
+        """
+        return self._tenant_id
+
+    @classmethod
+    def for_tenant(
+        cls,
+        tenant: Any,
+        *,
+        observability: Optional[Any] = None,
+        system_prompt: Optional[str] = None,
+        retries: int = 2,
+    ) -> "TriageAgent":
+        """Construct an agent for a specific tenant.
+
+        The clean entry point for the consultancy model: build one agent
+        per tenant, sourcing model routing (model, fallback_models,
+        circuit_breaker) and tenant identity from the TenantConfig.
+        Reuse the agent across many triage calls for that tenant.
+
+        Args:
+            tenant: A TenantConfig. Its model routing and tenant_id are
+                adopted by the agent.
+            observability: Optional Observability bundle.
+            system_prompt: Optional system prompt override. The
+                SYSTEM_PROMPT is uniform across tenants by design; this
+                override exists for the same testing/customization
+                reasons as on the normal constructor, not for per-tenant
+                prompt divergence.
+            retries: PydanticAI retry count.
+
+        Returns:
+            A TriageAgent configured for the tenant.
+        """
+        return cls(TriageAgentConfig(
+            tenant=tenant,
+            observability=observability,
+            system_prompt=system_prompt,
+            retries=retries,
+        ))
 
     def __repr__(self) -> str:
         """Concise representation naming the configured agent_version.
@@ -1124,6 +1217,7 @@ class TriageAgent:
                         evidence_cited=classification.evidence_cited,
                         confidence_signal=classification.confidence_signal,
                         output_schema_version=OUTPUT_SCHEMA_VERSION,
+                        tenant_id=self._tenant_id,
                         required_mitigations=classification.required_mitigations,
                         accountable_owner=classification.accountable_owner,
                         regulatory_framework_tags=classification.regulatory_framework_tags,

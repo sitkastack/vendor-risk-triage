@@ -78,6 +78,28 @@ __all__ = [
 # Module-level constants. Pattern strings reused across multiple Field declarations.
 
 _SEMVER_PATTERN: str = r"^\d+\.\d+\.\d+$"
+
+# Tenant identity. The slug pattern matches tenancy/config.py's
+# _TENANT_ID_RE. The sentinel DEFAULT_TENANT_ID is used by deployments
+# that run without a configured tenant (single-organization use); it is
+# permitted as an explicit exception to the slug pattern. A
+# DEFAULT_TENANT_ID appearing in a multi-tenant deployment indicates an
+# unconfigured triage call and should be investigated (the agent logs a
+# WARNING whenever it stamps the default).
+DEFAULT_TENANT_ID: str = "__default__"
+_TENANT_ID_SLUG_PATTERN: str = r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+
+
+def _version_tuple(version: str) -> tuple[int, int, int]:
+    """Parse 'X.Y.Z' into a comparable (int, int, int) tuple.
+
+    Used to compare declared output_schema_version against the tenancy
+    threshold (1.3.0). Assumes the value already passed the semver
+    pattern field validation, so a malformed string here is a
+    programming error, not a data condition.
+    """
+    parts = version.split(".")
+    return (int(parts[0]), int(parts[1]), int(parts[2]))
 _CUSTOM_FRAMEWORK_PATTERN: str = r"^custom:[a-z0-9_-]{1,64}:[a-z0-9_-]{1,128}$"
 
 
@@ -314,6 +336,21 @@ class TriageRecord(BaseModel):
     evidence_cited: list[EvidenceCitation] = Field(min_length=1)
     confidence_signal: ConfidenceSignal
     output_schema_version: str = Field(pattern=_SEMVER_PATTERN)
+    tenant_id: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description=(
+            "Stable slug identifying the tenant this decision was made "
+            "on behalf of. Required as of output contract 1.3.0 "
+            "(conditionally enforced by declared output_schema_version: "
+            "a record declaring 1.3.0 or later must carry it; records "
+            "declaring 1.0.0-1.2.0 predate tenancy and may omit it). "
+            "Lowercase alphanumerics and hyphens, or the reserved "
+            "sentinel '__default__' for unconfigured single-org "
+            "deployments."
+        ),
+    )
 
     # Optional fields. Some become conditionally required based on disposition;
     # see the model_validator below.
@@ -435,6 +472,31 @@ class TriageRecord(BaseModel):
             raise ValueError("regulatory_framework_tags must be unique")
         return value
 
+    @field_validator("tenant_id")
+    @classmethod
+    def _tenant_id_slug_or_sentinel(cls, value: Optional[str]) -> Optional[str]:
+        """tenant_id, when present, must be a valid slug or the sentinel.
+
+        Mirrors the output contract 1.3.0 schema: the value matches the
+        slug pattern (lowercase alphanumerics and hyphens) OR equals the
+        reserved sentinel DEFAULT_TENANT_ID ('__default__'). None is
+        permitted here at the field level; whether None is allowed for a
+        given record depends on its declared output_schema_version and
+        is enforced in the model validator below (1.3.0+ requires it).
+        """
+        if value is None:
+            return None
+        if value == DEFAULT_TENANT_ID:
+            return value
+        if not re.match(_TENANT_ID_SLUG_PATTERN, value):
+            raise ValueError(
+                f"tenant_id {value!r} must be a slug (lowercase "
+                f"alphanumerics and hyphens, starting and ending with an "
+                f"alphanumeric) or the reserved sentinel "
+                f"{DEFAULT_TENANT_ID!r}."
+            )
+        return value
+
     @model_validator(mode="after")
     def _enforce_conditional_requirements(self) -> "TriageRecord":
         """Enforce the schema's ``allOf`` and ``dependentRequired`` cross-field rules.
@@ -472,4 +534,15 @@ class TriageRecord(BaseModel):
                 "revoked_at and revocation_reason must be paired "
                 "(both present or both absent)"
             )
+        # tenant_id is required as of output contract 1.3.0 (decision A1:
+        # records declaring 1.0.0-1.2.0 predate tenancy and may omit it;
+        # records declaring 1.3.0 or later must carry it). Compare the
+        # declared version as a tuple so 1.3.0, 1.4.0, 2.0.0 etc. all
+        # require it without restating each.
+        if _version_tuple(self.output_schema_version) >= (1, 3, 0):
+            if self.tenant_id is None:
+                raise ValueError(
+                    "tenant_id is required for records declaring "
+                    "output_schema_version 1.3.0 or later"
+                )
         return self

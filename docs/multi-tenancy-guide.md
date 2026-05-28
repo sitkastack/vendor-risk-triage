@@ -60,6 +60,25 @@ registry.tenant_ids()                   # sorted list of ids
 
 Registering two configs with the same `tenant_id` raises `TenantRegistryError`. A deployment must not have two configurations claiming the same tenant identity.
 
+### Running the agent for a tenant
+
+As of 0.11.0, the agent consumes a tenant. The clean entry point is `TriageAgent.for_tenant`, which builds an agent that sources its model routing from the tenant and stamps every record with the tenant's id:
+
+```python
+from agent.agent import TriageAgent
+from tenancy import TenantRegistry
+
+registry = TenantRegistry.from_json_file("tenants.json")
+agent = TriageAgent.for_tenant(registry.get("acme-bank"))
+
+record = agent.triage(submission)
+assert record.tenant_id == "acme-bank"
+```
+
+The consultancy pattern is one agent per tenant, constructed once and reused. The tenant's `model`, `fallback_models`, and `circuit_breaker` populate the agent's routing; an explicit value passed alongside the tenant wins over the tenant's (explicit-over-implicit), which lets a caller override one facet without redefining the tenant.
+
+An agent built without a tenant (the bare `TriageAgent(...)` constructor with no `tenant`) stamps the reserved sentinel `tenant_id` `__default__` and logs a WARNING at construction. This keeps single-organization deployments frictionless: they need no tenant ceremony, and their records carry `__default__`. In a multi-tenant deployment, a `__default__` appearing in a record is a signal that some triage call ran through an unconfigured agent and should be investigated.
+
 ### Configuration file format
 
 The registry loads from a JSON file with a top-level `tenants` array:
@@ -102,9 +121,9 @@ Tenants differ in configuration (which model, which regulations), not in how the
 
 Tenancy lands across three sub-systems:
 
-1. **Tenant configuration model (0.10.0, this sub-system).** The `TenantConfig` and `TenantRegistry` described above. No agent integration, no schema change.
-2. **Tenant-scoped agent and `tenant_id` on records (next).** The agent gains tenant context, constructing its model routing from the tenant's config, and every `TriageRecord` gains a required `tenant_id` field. This is the framework's first breaking schema change: the output contract goes from 1.2.0 to 1.3.0, and `tenant_id` is required (not optional), because an un-attributed record in a multi-tenant deployment is an audit failure. Pre-1.3.0 records, which have no `tenant_id`, will not validate against 1.3.0 without migration.
-3. **Schema migration engine (after).** Tooling to up-migrate records across schema versions. This becomes substantive precisely because of the 1.2.0-to-1.3.0 break: migrating a pre-tenancy record forward requires assigning it a tenant identity, which is the framework's first non-trivial migration (every prior schema change was additive-optional and needed only a version restamp).
+1. **Tenant configuration model (0.10.0).** The `TenantConfig` and `TenantRegistry` described above. No agent integration, no schema change.
+2. **Tenant-scoped agent and `tenant_id` on records (0.11.0, shipped).** The agent gains tenant context: `TriageAgentConfig` accepts a `tenant` field, and `TriageAgent.for_tenant(tenant_config)` constructs an agent that sources its model routing from the tenant and stamps every record with the tenant's id. Every `TriageRecord` now carries a required `tenant_id` field (output contract 1.3.0). An agent built without a tenant stamps the reserved sentinel `__default__` and logs a WARNING, so single-organization use stays frictionless while an accidental missing tenant in a multi-tenant deployment leaves an auditable trail. Backward compatibility is preserved: the 1.0.0, 1.1.0, and 1.2.0 schemas remain valid for records declaring those versions, so archived pre-tenancy records are not retroactively invalidated; only records declaring 1.3.0 or later require `tenant_id`.
+3. **Schema migration engine (next).** Tooling to up-migrate records across schema versions. This becomes substantive precisely because of the 1.2.0-to-1.3.0 break: migrating a pre-tenancy record forward requires assigning it a tenant identity, which is the framework's first non-trivial migration (every prior schema change was additive-optional and needed only a version restamp).
 
 The required-versus-optional decision on `tenant_id` is the pivot. Making it required is the honest multi-client posture (no record is ever un-attributed) and it is what gives the migration engine real work to do. The alternative, an optional `tenant_id`, would keep tenancy additive and migration trivial, at the cost of permitting un-attributed records.
 

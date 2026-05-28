@@ -41,12 +41,11 @@ jobs:
       - name: Verify schemas are valid JSON Schema 2020-12
         run: |
           python -c "
+          import glob
           import json
           from jsonschema import Draft202012Validator
-          schemas = [
-              'schemas/input-contract-1.0.0.schema.json',
-              'schemas/output-contract-1.0.0.schema.json',
-          ]
+          schemas = sorted(glob.glob('schemas/*.schema.json'))
+          assert schemas, 'no schema files found under schemas/'
           for schema_file in schemas:
               with open(schema_file) as f:
                   schema = json.load(f)

@@ -10,6 +10,12 @@ and the framework adheres to [Semantic Versioning](https://semver.org/)
 (pre-1.0: breaking changes may ride in minor bumps).
 
 
+## [0.11.0]
+
+_sub-system 11, Phase 7 SS2_
+
+tenant-scoped agent and the framework's first breaking schema change. Output contract bumped 1.2.0 -> 1.3.0, adding a required `tenant_id` field: every record is now attributable to exactly one tenant. TriageAgentConfig gains a `tenant` field (a TenantConfig), and TriageAgent.for_tenant() constructs an agent from a tenant, sourcing model routing (model, fallback_models, circuit_breaker) and tenant identity from it (decision C1: one agent per tenant, explicit-config-over-tenant when both are given). An agent built without a tenant stamps the reserved sentinel tenant_id `__default__` and logs a WARNING (decision B2: single-org use stays frictionless, but an accidental missing tenant in a multi-tenant deployment leaves an auditable trail). Backward compatibility is preserved (decision A1): the 1.0.0, 1.1.0, and 1.2.0 schemas remain in the validator dispatch unchanged, so a record declaring a pre-1.3.0 version still validates without tenant_id; only records declaring 1.3.0 or later require it. The Pydantic TriageRecord model enforces this conditionally by declared output_schema_version, mirroring the JSON-schema dispatch. tenant_id added to the agent.constructed event. SYSTEM_PROMPT stays uniform across tenants (hash unchanged). This is a minor bump: pre-1.0 the framework rides schema additions in minor versions, and A1 means no archived record is retroactively invalidated. The migration engine that up-migrates pre-1.3.0 records (assigning a tenant) is SS3.
+
 ## [0.10.0]
 
 _sub-system 10, Phase 7 SS1_

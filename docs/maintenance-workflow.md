@@ -253,6 +253,19 @@ The 0.8.0 release added the optional nested `cost_estimate` field to TriageRecor
 
 The pattern is identical to the 1.0.0 -> 1.1.0 migration: additive nested optional field, new schema file alongside the old, new version stamp, validator dispatch extended. The pricing package is the substantive new infrastructure; the schema bump is the contract-level expression of it.
 
+### Worked example: 1.2.0 -> 1.3.0 (Phase 7 SS2) - the first breaking change
+
+Every prior schema change was additive-optional: a record produced under an older version was already a valid newer-version record except for the version stamp. The 1.3.0 change is the framework's first breaking one: it adds a `tenant_id` field that is *required*, so a pre-1.3.0 record (which has no tenant_id) genuinely fails 1.3.0 validation. The migration:
+
+1. New schema file `schemas/output-contract-1.3.0.schema.json` was added alongside the 1.0.0, 1.1.0, and 1.2.0 files (which were not modified). It adds `tenant_id` to both `properties` and `required` on the base definition, with the field constrained to either the tenant slug pattern or the reserved sentinel `__default__` (expressed as an `anyOf`). The `output_schema_version` const was set to `1.3.0`.
+2. `schemas/validate.py` `_OUTPUT_SCHEMA_FILES` dispatch was extended with `"1.3.0"`. All four schemas (1.0.0, 1.1.0, 1.2.0, 1.3.0) are now in the dispatch. This is the decision that preserves backward compatibility: a record declaring 1.2.0 still validates against the 1.2.0 schema (which never required tenant_id), so archived records are never retroactively invalidated. Only records declaring 1.3.0 or later are held to the new requirement.
+3. `agent/agent.py` bumped `OUTPUT_SCHEMA_VERSION` to `1.3.0`. The agent now stamps `tenant_id` into every record it produces.
+4. The Pydantic `TriageRecord` model gained an `Optional[str]` `tenant_id` field whose presence is enforced *conditionally by declared output_schema_version*: the model validator requires it when `output_schema_version >= 1.3.0` and permits its absence otherwise. This mirrors the JSON-schema dispatch in a single model class: the model can still represent a historical 1.2.0 record (tenant_id absent) and a current 1.3.0 record (tenant_id required), exactly as the dispatch does. A field-level validator enforces the slug-or-sentinel rule when a value is present.
+
+The key lesson: even a breaking schema change does not have to break the validator for old records. By keeping every published schema file frozen and dispatching by the record's declared version, the framework lets a 2026 record validate against 2026's contract forever, while new records adopt the new requirement. The "breaking" nature is real (new records must carry tenant_id; a consumer expecting every record to have one must handle the migration of old records) but it is contained to records that opt into the new version.
+
+Because pre-1.3.0 records cannot be made valid 1.3.0 records by a version restamp alone (they lack a tenant identity), this is the first schema change that needs a real migration engine rather than a restamp. That engine (SS3) assigns a tenant to pre-tenancy records as it up-migrates them.
+
 ### What not to do
 
 Do not modify a `1.0.0` schema file in place. Once `1.0.0` is published, it is frozen. Modifications go in a new file with a new version. The framework code dispatches by the version string in the record.

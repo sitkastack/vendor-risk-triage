@@ -41,7 +41,7 @@
     "score": 0.78,
     "interpretation": "moderate"
   },
-  "output_schema_version": "1.2.0",
+  "output_schema_version": "1.3.0",
   "required_mitigations": [
     "Verify the no-training-use commitment against the actual Anthropic DPA at contract renewal.",
     "Quarterly review of transcript-retention controls (90-day purge) and PII-masking efficacy on account numbers.",
@@ -51,5 +51,6 @@
   "review_interval_days": 180,
   "regulatory_framework_tags": [
     "OSFI_E_23"
-  ]
+  ],
+  "tenant_id": "__default__"
 }

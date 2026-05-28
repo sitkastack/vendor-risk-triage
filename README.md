@@ -24,7 +24,7 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 | Phase 5: Operational Hardening | live |
 | Phase 6: Production Polish | in progress |
 
-Current framework version: `0.10.0`. Test suite: 1230 tests, 100% coverage across eleven Python packages.
+Current framework version: `0.11.0`. Test suite: 1254 tests, 100% coverage across eleven Python packages.
 
 ## What's in this repository
 

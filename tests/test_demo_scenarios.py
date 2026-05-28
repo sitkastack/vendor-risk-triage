@@ -39,7 +39,6 @@ SUBMISSIONS_DIR = REPO_ROOT / "examples" / "submissions"
 EXPECTED_DIR = REPO_ROOT / "examples" / "expected-records"
 DATASET_PATH = REPO_ROOT / "eval" / "datasets" / "demo-scenarios.jsonl"
 INPUT_SCHEMA_PATH = REPO_ROOT / "schemas" / "input-contract-1.0.0.schema.json"
-OUTPUT_SCHEMA_PATH = REPO_ROOT / "schemas" / "output-contract-1.0.0.schema.json"
 
 
 # -- dataset loading ------------------------------------------------------
@@ -64,12 +63,6 @@ def demo_scenarios() -> list[dict[str, Any]]:
 @pytest.fixture(scope="module")
 def input_validator() -> Draft202012Validator:
     schema = json.loads(INPUT_SCHEMA_PATH.read_text())
-    return Draft202012Validator(schema)
-
-
-@pytest.fixture(scope="module")
-def output_validator() -> Draft202012Validator:
-    schema = json.loads(OUTPUT_SCHEMA_PATH.read_text())
     return Draft202012Validator(schema)
 
 
@@ -169,14 +162,20 @@ def test_every_submission_validates_against_input_contract(
 
 def test_every_expected_record_validates_against_output_contract(
     demo_scenarios: list[dict],
-    output_validator: Draft202012Validator,
 ) -> None:
-    """All five expected_records conform to the output contract."""
+    """All five expected_records conform to the output contract.
+
+    Validates each record against the schema matching its declared
+    ``output_schema_version`` (via the framework's own dispatch) rather
+    than a single pinned schema, so the test stays correct across
+    contract version bumps and verifies each record against the exact
+    contract it claims to conform to.
+    """
+    from schemas.validate import validate_output
     for s in demo_scenarios:
-        errors = list(output_validator.iter_errors(s["expected_record"]))
-        assert not errors, (
-            f"scenario {s['id']} expected_record invalid: "
-            f"{[(e.message, list(e.absolute_path)) for e in errors]}"
+        ok, errors = validate_output(s["expected_record"])
+        assert ok, (
+            f"scenario {s['id']} expected_record invalid: {errors}"
         )
 
 
