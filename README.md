@@ -12,7 +12,7 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 
 ## Status
 
-**Phases 0 through 4 are live. The framework is feature-complete at the code level for vendor risk triage with full evaluation depth.**
+**Phases 0 through 4 are live. Phase 6 production-polish sub-systems are landing incrementally. The framework is feature-complete at the code level for vendor risk triage with full evaluation depth, observability, cost tracking, model fallback, and release tooling.**
 
 | Phase | Status |
 |---|---|
@@ -21,10 +21,10 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 | Phase 2: Architecture & Threat Model | live |
 | Phase 3: Agent + RAG + Ingestion + Eval | live |
 | Phase 4: Eval Depth + Retrieval Quality | live |
-| Phase 5: Operational Hardening | upcoming |
-| Phase 6: Production Polish | upcoming |
+| Phase 5: Operational Hardening | live |
+| Phase 6: Production Polish | in progress |
 
-Current framework version: `0.6.0`. Test suite: 568 tests, 100% coverage across all seven Python packages.
+Current framework version: `0.9.1`. Test suite: 1181 tests, 100% coverage across ten Python packages.
 
 ## What's in this repository
 

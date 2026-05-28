@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.9.0"
+FRAMEWORK_VERSION: str = "0.9.1"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,25 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.9.1 (sub-system 9, Phase 6 SS5): release engineering tooling.
+  New ``scripts/bump_version.py`` atomically bumps
+  ``_version.FRAMEWORK_VERSION`` and the ``pyproject.toml`` version
+  together (major/minor/patch or explicit), refusing on a dirty git
+  tree unless ``--allow-dirty`` is passed and rejecting downgrades.
+  New ``scripts/extract_changelog.py`` projects this hand-curated
+  History section into a standard repo-root ``CHANGELOG.md`` (Keep-a-
+  Changelog format), with a ``--check`` mode that verifies the
+  committed changelog matches the source so CI can catch a stale
+  changelog. New ``scripts/prepare_release.py`` runs the automatable
+  subset of the maintenance doc's release checklist (version sync,
+  changelog current, full suite, coverage gate, drift, em-dash) and
+  emits a go/no-go report plus the manual steps a maintainer must
+  confirm by hand. New repo-root ``CHANGELOG.md`` (generated). Patch
+  bump: tooling only, no schema change, no runtime behavior change,
+  no public framework API change. The changelog is deliberately
+  projected from the hand-written History rather than generated from
+  commit messages: the hand-curated prose is higher-signal than any
+  commit-derived changelog.
 - 0.9.0 (sub-system 8, Phase 6 SS4): model fallback with circuit
   breaker. New ``resilience`` package with CircuitBreaker,
   CircuitBreakerConfig, CircuitState, ModelHealth, BreakerStateStore

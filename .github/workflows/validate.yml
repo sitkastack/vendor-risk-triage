@@ -30,6 +30,14 @@ jobs:
             exit 1
           fi
 
+      - name: Verify CHANGELOG.md is current with _version.py history
+        run: |
+          python scripts/extract_changelog.py --check
+          if [ $? -ne 0 ]; then
+            echo "::error::CHANGELOG.md is stale. Regenerate it via 'python scripts/extract_changelog.py' and commit."
+            exit 1
+          fi
+
       - name: Verify schemas are valid JSON Schema 2020-12
         run: |
           python -c "
