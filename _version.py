@@ -34,13 +34,44 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.14.0"
+FRAMEWORK_VERSION: str = "1.0.0"
 """Semver of the framework's code.
 
-Bumped on any behavior change. Pre-1.0, breaking changes ride in
-minor bumps; the 1.0 release will signal API-stability commitments.
+Bumped on any behavior change. From 1.0.0 onward, breaking changes to
+the output contract, CLI surface, or PydanticAI tool-use surface ride
+in major bumps; additive features ride in minor bumps; bug fixes and
+test-infrastructure changes ride in patch bumps. New output schema
+versions remain forward-compatible via the migration engine
+(``vrt migrate``).
 
 History:
+
+- 1.0.0 (framework production-ready). API and output-contract stability
+  commitment from this release forward. 1.0.0 ships the same code as
+  0.14.0 plus the 843485d fixture hardening (anthropic_api_key skips
+  cleanly on placeholder keys); no new features, no behavior changes
+  beyond that fix. The 1.0.0 designation marks the milestone, not a
+  code change.
+  Build phases shipped across 0.x: framework foundations (discovery,
+  data contracts, threat model, agent core), RAG and hybrid retrieval
+  (BM25 + vector + RRF), eval suite (calibration, citation
+  verification, LLM-as-judge), CLI and observability, resilience and
+  cost tracking, multi-tenancy with required tenant_id, schema
+  migration engine, end-to-end regression suite, real-corpus
+  integration with pins for NIST AI RMF and SOX PL 107-204 and
+  verify=False fetch for OSFI E-23 and EU AI Act, and the post-0.14.0
+  fixture hardening.
+  Stable surfaces at 1.0.0: OUTPUT_SCHEMA_VERSION 1.3.0 (frozen;
+  breaking schema changes from here on ride in major bumps and
+  ``vrt migrate`` backfills), SYSTEM_PROMPT_HASH 69ef583c6dbe (stable
+  since 0.5.0; uniform across tenants), tenant_id required with
+  __default__ for single-org installs, CLI surface ``vrt {triage,
+  demo, migrate, report, eval}``, 1331 tests with 100% coverage
+  across twelve packages.
+  Framework state: integration suite green against authoritative
+  OSFI E-23 (2027) and EU AI Act PDFs; six prepare_release gates GO;
+  no drift; no em-dashes. Major bump: stability commitment milestone,
+  no behavior change vs 0.14.0 + 843485d.
 
 - 0.14.0 (post-build item 2: real-corpus integration). Tooling and
   pins for running the framework against the real regulation PDFs, and
