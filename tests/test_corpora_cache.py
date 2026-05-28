@@ -167,3 +167,56 @@ def test_fetch_corpus_invalidates_cached_file_on_hash_mismatch(
 
     # Cached file was unlinked before the re-fetch attempt
     assert not cached_path.exists()
+
+
+# -- verify=False path (fetchable-but-not-pinnable sources) -------------
+
+
+def test_fetch_corpus_verify_false_returns_cache_without_hash_check(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """verify=False returns a cached file even if its hash != the pin.
+
+    The OSFI print-PDF route is non-deterministic, so its cached bytes
+    will not match any pin. verify=False must still return them.
+    """
+    monkeypatch.setenv("SITKASTACK_VRT_CACHE", str(tmp_path))
+    source = CORPUS_REGISTRY["osfi-e23"]
+    corpus_dir = tmp_path / source.name
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    cached = corpus_dir / source.filename
+    # Bytes whose hash will not equal the placeholder pin.
+    cached.write_bytes(b"%PDF-1.4 non-deterministic osfi print\n%%EOF\n")
+
+    returned = fetch_corpus("osfi-e23", verify=False)
+    assert returned == cached
+
+
+class _FakeResponse:
+    """Minimal context-manager stand-in for urlopen's return value."""
+
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+    def __enter__(self) -> "_FakeResponse":
+        return self
+
+    def __exit__(self, *exc) -> bool:
+        return False
+
+
+def test_fetch_corpus_rejects_empty_body(tmp_path: Path, monkeypatch) -> None:
+    """An empty (or tiny) HTTP 200 body is rejected, even with verify=False.
+
+    Guards against EUR-Lex-style empty responses being cached as a PDF.
+    """
+    monkeypatch.setenv("SITKASTACK_VRT_CACHE", str(tmp_path))
+    import urllib.request
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: _FakeResponse(b""),
+    )
+    with pytest.raises(CorpusFetchError, match="bytes"):
+        fetch_corpus("eu-ai-act", verify=False)

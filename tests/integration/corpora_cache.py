@@ -102,20 +102,33 @@ def cache_dir() -> Path:
     return root
 
 
-def fetch_corpus(name: str) -> Path:
+def fetch_corpus(name: str, verify: bool = True) -> Path:
     """Fetch one corpus PDF, returning the path to its cached copy.
 
     Args:
         name: Registry key (``osfi-e23``, ``nist-ai-rmf``,
             ``eu-ai-act``, ``sox-pl-107-204``).
+        verify: When True (default), the downloaded (or cached) bytes
+            must match the registry SHA-256 pin or a CorpusFetchError
+            is raised. When False, the pin is not checked: the bytes
+            are fetched, an empty/too-small body is still rejected, and
+            the file is returned as-is. Use ``verify=False`` for
+            sources that are fetchable but not content-hash-pinnable
+            (e.g. the OSFI print-PDF route, which embeds a per-fetch
+            token and so produces different bytes every time). The
+            integration suite uses the default for pinned corpora and
+            ``verify=False`` for OSFI; the harvest script uses
+            ``verify=False`` because it renders current bytes rather
+            than asserting reproducibility.
 
     Returns:
         Path to the cached PDF on disk.
 
     Raises:
-        CorpusFetchError: Network failure, HTTP error, hash mismatch,
-            file system error, or unknown corpus name. Callers should
-            catch this and ``pytest.skip()`` to avoid CI noise.
+        CorpusFetchError: Network failure, HTTP error, hash mismatch
+            (when ``verify``), empty/too-small body, file system error,
+            or unknown corpus name. Callers should catch this and
+            ``pytest.skip()`` to avoid CI noise.
     """
     if name not in CORPUS_REGISTRY:
         raise CorpusFetchError(
@@ -128,8 +141,12 @@ def fetch_corpus(name: str) -> Path:
     corpus_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = corpus_dir / source.filename
 
-    # If cached, verify SHA-256 and return.
+    # If cached, return it. When verifying, the hash must match the
+    # pin; otherwise the cached copy is accepted as-is (the source is
+    # not content-addressable).
     if pdf_path.exists():
+        if not verify:
+            return pdf_path
         actual_hash = _hash_file(pdf_path)
         if actual_hash == source.sha256_hex:
             return pdf_path
@@ -160,26 +177,41 @@ def fetch_corpus(name: str) -> Path:
             f"Timeout fetching {source.url}"
         ) from exc
 
-    # Verify hash of downloaded bytes.
-    downloaded_hash = hashlib.sha256(payload).hexdigest()
-    if downloaded_hash != source.sha256_hex:
-        # If the pin is the all-zero placeholder, emit a helpful hint
-        # rather than just a mismatch.
-        if source.sha256_hex == "0" * 64:
-            raise CorpusFetchError(
-                f"Pinned SHA-256 for {name!r} is the placeholder "
-                f"({'0' * 64}). Downloaded file has SHA-256 "
-                f"{downloaded_hash}. Update CORPUS_REGISTRY in "
-                f"tests/integration/corpora_cache.py with this hash "
-                f"and re-run."
-            )
+    # Reject an empty or implausibly small body before anything else.
+    # EUR-Lex and similar return HTTP 200 with an empty (or tiny
+    # challenge-page) body to scripted clients; without this guard a
+    # verify=False fetch would cache that garbage as a "PDF". A real
+    # regulation PDF is far larger than this floor.
+    if len(payload) < 1024:
         raise CorpusFetchError(
-            f"SHA-256 mismatch for {name!r}: "
-            f"expected {source.sha256_hex}, "
-            f"downloaded {downloaded_hash}. The regulator may have "
-            f"published an amended version. Verify the change is "
-            f"expected and update the pin."
+            f"Body for {name!r} from {source.url} is only "
+            f"{len(payload)} bytes, not a usable PDF. The host likely "
+            f"blocks scripted access (EUR-Lex does this); download the "
+            f"PDF in a browser and use it directly."
         )
+
+    # Verify hash of downloaded bytes (unless the caller opted out for a
+    # fetchable-but-not-pinnable source).
+    if verify:
+        downloaded_hash = hashlib.sha256(payload).hexdigest()
+        if downloaded_hash != source.sha256_hex:
+            # If the pin is the all-zero placeholder, emit a helpful hint
+            # rather than just a mismatch.
+            if source.sha256_hex == "0" * 64:
+                raise CorpusFetchError(
+                    f"Pinned SHA-256 for {name!r} is the placeholder "
+                    f"({'0' * 64}). Downloaded file has SHA-256 "
+                    f"{downloaded_hash}. Update CORPUS_REGISTRY in "
+                    f"tests/integration/corpora_cache.py with this hash "
+                    f"and re-run."
+                )
+            raise CorpusFetchError(
+                f"SHA-256 mismatch for {name!r}: "
+                f"expected {source.sha256_hex}, "
+                f"downloaded {downloaded_hash}. The regulator may have "
+                f"published an amended version. Verify the change is "
+                f"expected and update the pin."
+            )
 
     # Write to cache.
     try:

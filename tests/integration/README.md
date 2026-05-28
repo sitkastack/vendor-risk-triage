@@ -66,8 +66,49 @@ variable.
 
 ## SHA-256 pins and first-run setup
 
-The corpus registry in `corpora_cache.py` ships with placeholder SHA-256
-pins (all-zero). The first run for each corpus will:
+### Current pin status (2026-05)
+
+Two of the four corpora are pinned and auto-verify; two cannot be
+pinned from their source and are handled manually:
+
+- **`nist-ai-rmf`** and **`sox-pl-107-204`**: pinned. Both are static
+  publications served at a stable URL, verified by three independent
+  fetches producing byte-identical output. The integration test
+  fetches and verifies these against the pin and runs end to end.
+- **`osfi-e23`**: fetchable, NOT content-hash-pinnable. The live
+  endpoint is the Drupal print-PDF route (`/en/print/pdf/node/1893`);
+  the older direct `gd-mrm-*.pdf` path 404s. The print route is
+  non-deterministic: repeated fetches yield different bytes (an
+  embedded timestamp or session token), so there is no stable hash to
+  pin. But the route fetches fine and the guideline text it returns is
+  stable, so OSFI is fetched with `fetch_corpus(verify=False)`: the
+  integration test and `scripts/harvest_corpus_artifacts.py` both run
+  against the current bytes without a content-hash check. The OSFI
+  integration test therefore runs (when the network is reachable)
+  rather than skipping. You can also pass a downloaded copy via
+  `--pdf` to the harvest script.
+- **`eu-ai-act`**: NOT script-fetchable. The EUR-Lex OJ PDF URL is
+  canonical and correct, but EUR-Lex serves an empty body to scripted
+  clients (access control, not a stale URL); both the OJ and CELEX URL
+  forms return zero bytes to `urllib`. EUR-Lex *does* serve the real
+  PDF to browsers, so the manual path is: open the registry URL in a
+  browser, save the file as
+  `~/.cache/sitkastack-vrt/corpora/eu-ai-act/eu-ai-act-regulation-2024-1689-en.pdf`,
+  and the next `pytest -m integration` run will pick it up (the EU
+  fixture uses `verify=False`, so the manually-placed PDF is accepted
+  without a hash check). Alternatively pass it directly to the harvest
+  script via `--pdf`.
+
+The script `scripts/print_corpus_hashes.py` fetches each corpus and
+prints its size + SHA-256 (refusing to emit a hash for an empty or
+suspiciously small body), which is how the pinned hashes above were
+collected and how a future refresh would be re-verified.
+
+### First-run setup (for a newly added or re-pinnable corpus)
+
+The corpus registry in `retrieval/corpora.py` ships unpinnable corpora
+with placeholder SHA-256 pins (all-zero). The first run for a
+pinnable corpus will:
 
 1. Download the PDF.
 2. Compare the downloaded SHA-256 against the placeholder.

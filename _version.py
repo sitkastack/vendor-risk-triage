@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "0.13.0"
+FRAMEWORK_VERSION: str = "0.14.0"
 """Semver of the framework's code.
 
 Bumped on any behavior change. Pre-1.0, breaking changes ride in
@@ -42,6 +42,42 @@ minor bumps; the 1.0 release will signal API-stability commitments.
 
 History:
 
+- 0.14.0 (post-build item 2: real-corpus integration). Tooling and
+  pins for running the framework against the real regulation PDFs, and
+  for harvesting demo/content artifacts from them. New
+  ``scripts/harvest_corpus_artifacts.py`` runs the full pipeline
+  (chunk -> BM25 retrieve -> triage -> render) on a regulation PDF and
+  saves a rendered audit pack, a retrieval transcript, and the record
+  JSON; it takes a registry corpus name (fetched from the cache) or an
+  explicit ``--pdf`` path, and uses a deterministic model by default
+  (``--real-llm`` for the production model). New
+  ``scripts/print_corpus_hashes.py`` fetches each corpus and prints its
+  byte size + SHA-256, refusing to emit a hash for an empty or
+  suspiciously small body (under 50 KB) so a blocked/empty response can
+  never be mistaken for a pinnable artifact. Corpus registry pins:
+  ``nist-ai-rmf`` and ``sox-pl-107-204`` are now pinned (verified by
+  three byte-identical fetches; the integration test fetches and
+  verifies them and runs end to end). ``osfi-e23`` URL fixed to the
+  live Drupal print-PDF route (the direct gd-mrm path 404s) and fetched
+  with a new ``fetch_corpus(verify=False)`` option: that route is
+  non-deterministic (an embedded per-fetch token makes the bytes differ
+  every fetch), so it has no stable content-hash to pin, but it fetches
+  fine and the guideline text is stable. With verify=False the OSFI
+  integration test and the harvest script run against the current bytes
+  without a hash check, so the OSFI test runs (not skips) when the
+  network is reachable. fetch_corpus now also rejects an empty or
+  sub-1KB body outright, so a blocked/empty response can never be
+  cached as a PDF. ``eu-ai-act`` left unpinned and not script-fetchable
+  (EUR-Lex serves an empty body to scripted clients regardless of URL
+  form, but DOES serve the real PDF to browsers). The EU integration
+  fixture also uses verify=False so a manually-placed cached PDF is
+  accepted without a hash check: drop the browser-downloaded PDF at
+  ``~/.cache/sitkastack-vrt/corpora/eu-ai-act/eu-ai-act-regulation-2024-1689-en.pdf``
+  and the EU integration test runs against the real corpus. The
+  harvest script's ``--pdf`` path remains available as the alternative.
+  The integration-test README documents this status.
+  Minor bump: additive tooling and corpus pins, no framework code or
+  contract change.
 - 0.13.0 (Phase 7 close-out): end-to-end regression suite and the
   code-complete milestone. New ``tests/test_e2e.py`` verifies that
   the framework's twelve packages compose into a working pipeline

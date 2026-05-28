@@ -70,13 +70,22 @@ CORPUS_REGISTRY: Dict[str, CorpusSource] = {
     "osfi-e23": CorpusSource(
         name="osfi-e23",
         url=(
-            "https://www.osfi-bsif.gc.ca/sites/default/files/2025-09/"
-            "gd-mrm-2027.pdf"
+            # OSFI republishes the direct gd-mrm-*.pdf path on each
+            # refresh, breaking it (404). The Drupal print-PDF route for
+            # the E-23 (2027) guideline node is the live endpoint and
+            # returns the guideline text. Confirmed live 2026-05.
+            "https://www.osfi-bsif.gc.ca/en/print/pdf/node/1893"
         ),
-        # Pin placeholder. Replace with the actual SHA-256 of the
-        # downloaded PDF; see the corpus manifest for the verification
-        # workflow. Integration tests calling fetch_corpus will fail
-        # loudly until pins are filled.
+        # NOT content-hash-pinnable: the print-PDF route is
+        # non-deterministic. Two fetches of this URL on the same
+        # machine, same user agent, no intervention, produced different
+        # SHA-256 digests (an embedded generation timestamp/session
+        # token in the PDF stream). The pin therefore stays the
+        # placeholder. The route IS fetchable, though, and the
+        # guideline TEXT it returns is stable, so OSFI is fetched with
+        # fetch_corpus(verify=False): the integration test and the
+        # harvest script both run against the current bytes without a
+        # content-hash check. See tests/integration/README.md.
         sha256_hex="0" * 64,
         filename="osfi-e23-guideline-2027.pdf",
         document_name="guideline-2027",
@@ -84,16 +93,36 @@ CORPUS_REGISTRY: Dict[str, CorpusSource] = {
     "nist-ai-rmf": CorpusSource(
         name="nist-ai-rmf",
         url="https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf",
-        sha256_hex="0" * 64,
+        # Pinned 2026-05. Verified by three independent fetches
+        # producing byte-identical output (1,946,127 bytes). A static
+        # NIST publication; the integration test verifies against this.
+        sha256_hex="7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
         filename="nist-ai-rmf-100-1.pdf",
         document_name="100-1",
     ),
     "eu-ai-act": CorpusSource(
         name="eu-ai-act",
         url=(
+            # Canonical EUR-Lex OJ PDF link (cited as the source by
+            # published reproductions of the Act). The URL is correct;
+            # the OJ and CELEX forms both return HTTP 200 with an EMPTY
+            # body to scripted clients. This is EUR-Lex access control
+            # (it serves an interstitial/JS consent flow to non-browser
+            # agents), not a stale URL.
             "https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/"
             "?uri=OJ:L_202401689"
         ),
+        # NOT pinnable from this source: EUR-Lex does not serve the PDF
+        # to urllib (empty body), so fetch_corpus cannot retrieve it
+        # automatically. To use the EU AI Act, open the URL above in a
+        # browser (EUR-Lex serves the real PDF to browsers, just not
+        # scripts), save the file as
+        # ``~/.cache/sitkastack-vrt/corpora/eu-ai-act/eu-ai-act-regulation-2024-1689-en.pdf``,
+        # and then either: (a) run pytest -m integration and the EU
+        # test will run against the cached copy (verify=False), or
+        # (b) pass the file directly to
+        # scripts/harvest_corpus_artifacts.py via --pdf. See
+        # tests/integration/README.md.
         sha256_hex="0" * 64,
         filename="eu-ai-act-regulation-2024-1689-en.pdf",
         document_name="regulation-2024-1689",
@@ -101,7 +130,10 @@ CORPUS_REGISTRY: Dict[str, CorpusSource] = {
     "sox-pl-107-204": CorpusSource(
         name="sox-pl-107-204",
         url="https://www.govinfo.gov/content/pkg/COMPS-1883/pdf/COMPS-1883.pdf",
-        sha256_hex="0" * 64,
+        # Pinned 2026-05. Verified by three independent fetches
+        # producing byte-identical output (250,730 bytes). A static
+        # govinfo compilation; the integration test verifies against it.
+        sha256_hex="048689e26cf64023fa38849e3d1d20f61315b3257b0d18e3717b91c6c6c672eb",
         filename="sox-pl-107-204.pdf",
         document_name="pl-107-204",
     ),

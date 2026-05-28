@@ -31,26 +31,33 @@ from tests.integration.corpora_cache import (
 # -- corpus fixtures -----------------------------------------------------
 
 
-def _try_fetch(name: str) -> Optional[Path]:
+def _try_fetch(name: str, verify: bool = True) -> Optional[Path]:
     """Attempt a corpus fetch; return None on failure.
 
     Integration tests use this to skip cleanly when corpora are not
     available (offline contributors, CI without network, regulators
-    serving 5xx).
+    serving 5xx). ``verify=False`` fetches a source that is not
+    content-hash-pinnable (see fetch_corpus).
     """
     try:
-        return fetch_corpus(name)
+        return fetch_corpus(name, verify=verify)
     except CorpusFetchError:
         return None
 
 
 @pytest.fixture(scope="session")
 def osfi_e23_pdf() -> Path:
-    """Cached OSFI E-23 PDF. Skips test if unfetchable."""
-    path = _try_fetch("osfi-e23")
+    """Cached OSFI E-23 PDF. Skips test if unfetchable.
+
+    Fetched with verify=False: the OSFI print-PDF route is
+    non-deterministic (per-fetch token), so it has no stable
+    content-hash pin. The guideline text it returns is stable, which is
+    what the integration test asserts against.
+    """
+    path = _try_fetch("osfi-e23", verify=False)
     if path is None:
         pytest.skip(
-            "OSFI E-23 PDF unavailable (network or pin issue). See "
+            "OSFI E-23 PDF unavailable (network). See "
             "tests/integration/README.md for setup."
         )
     return path
@@ -70,12 +77,23 @@ def nist_ai_rmf_pdf() -> Path:
 
 @pytest.fixture(scope="session")
 def eu_ai_act_pdf() -> Path:
-    """Cached EU AI Act PDF (English). Skips test if unfetchable."""
-    path = _try_fetch("eu-ai-act")
+    """Cached EU AI Act PDF (English). Skips test if unfetchable.
+
+    Fetched with verify=False because EUR-Lex returns an empty body to
+    scripted clients (the live download won't succeed at all; the
+    empty-body guard in fetch_corpus turns that into a clean skip).
+    The verify=False mode also accepts a manually-placed cached PDF
+    without a hash check, so dropping the EU AI Act PDF into
+    ``~/.cache/sitkastack-vrt/corpora/eu-ai-act/eu-ai-act-regulation-2024-1689-en.pdf``
+    (downloaded once via a browser from the registry URL) is enough to
+    make this test run.
+    """
+    path = _try_fetch("eu-ai-act", verify=False)
     if path is None:
         pytest.skip(
-            "EU AI Act PDF unavailable (network or pin issue). See "
-            "tests/integration/README.md for setup."
+            "EU AI Act PDF unavailable. EUR-Lex blocks scripted "
+            "fetches; download the PDF in a browser and place it in "
+            "the cache. See tests/integration/README.md."
         )
     return path
 
