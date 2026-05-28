@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "1.0.0"
+FRAMEWORK_VERSION: str = "1.0.1"
 """Semver of the framework's code.
 
 Bumped on any behavior change. From 1.0.0 onward, breaking changes to
@@ -45,6 +45,24 @@ versions remain forward-compatible via the migration engine
 (``vrt migrate``).
 
 History:
+
+- 1.0.1 (documentation correction). Patch release fixing a writing
+  error in the 1.0.0 History entry's CLI surface listing. The shipped
+  1.0.0 entry listed ``vrt {triage, demo, migrate, report, eval}``,
+  which was an invented surface introduced during release-notes
+  drafting; the actual CLI surface, verified against ``vrt --help``,
+  is ``vrt {triage, render, migrate, drift, corpus, version}``. Caught
+  during pre-publication review of the GitHub release notes draft for
+  v1.0.0, before any release was published. Corrects the 1.0.0 entry
+  text on main and adds this 1.0.1 entry documenting the correction.
+  Regenerates CHANGELOG.md. No framework code change. No behavior
+  change. No test count change (still 1331 passed, 100% coverage
+  across twelve packages). No drift. The v1.0.0 git tag (commit
+  7f9c073) still carries the original typo'd History entry text; git
+  tags are immutable once pushed, so v1.0.0 forensic checkouts will
+  always show the original. Main and v1.0.1 onward carry the
+  corrected text. Patch bump: documentation correction only, no
+  public API change.
 
 - 1.0.0 (framework production-ready). API and output-contract stability
   commitment from this release forward. 1.0.0 ships the same code as
@@ -66,7 +84,7 @@ History:
   ``vrt migrate`` backfills), SYSTEM_PROMPT_HASH 69ef583c6dbe (stable
   since 0.5.0; uniform across tenants), tenant_id required with
   __default__ for single-org installs, CLI surface ``vrt {triage,
-  demo, migrate, report, eval}``, 1331 tests with 100% coverage
+  render, migrate, drift, corpus, version}``, 1331 tests with 100% coverage
   across twelve packages.
   Framework state: integration suite green against authoritative
   OSFI E-23 (2027) and EU AI Act PDFs; six prepare_release gates GO;
