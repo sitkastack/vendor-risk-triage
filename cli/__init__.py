@@ -1,9 +1,10 @@
 """Command-line interface for the vendor risk triage framework.
 
-Provides a single ``vrt`` entry point with five subcommands:
+Provides a single ``vrt`` entry point with six subcommands:
 
 - ``vrt triage`` - run the agent against a submission JSON file
 - ``vrt render`` - render an audit pack HTML from a TriageRecord
+- ``vrt migrate`` - up-migrate records to a newer output contract
 - ``vrt drift`` - check classification drift against the baseline
 - ``vrt corpus build`` - build IndexBundles from regulation PDFs
 - ``vrt version`` - print framework version and verify pyproject sync

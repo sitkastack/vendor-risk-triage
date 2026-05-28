@@ -25,8 +25,8 @@ REPO_ROOT = Path(__file__).parent.parent
 # -- parser construction ------------------------------------------------
 
 
-def test_parser_has_all_five_subcommands() -> None:
-    """All five subcommands are registered."""
+def test_parser_has_all_subcommands() -> None:
+    """All six subcommands are registered."""
     parser = build_parser()
     # Capture subparser choices
     subparsers_action = None
@@ -36,7 +36,7 @@ def test_parser_has_all_five_subcommands() -> None:
                 subparsers_action = action
                 break
     assert subparsers_action is not None
-    expected = {"triage", "render", "drift", "corpus", "version"}
+    expected = {"triage", "render", "migrate", "drift", "corpus", "version"}
     assert set(subparsers_action.choices.keys()) == expected
 
 

@@ -30,6 +30,7 @@ from _version import FRAMEWORK_VERSION  # noqa: E402
 from cli import (  # noqa: E402
     cmd_corpus,
     cmd_drift,
+    cmd_migrate,
     cmd_render,
     cmd_triage,
     cmd_version,
@@ -76,6 +77,14 @@ def build_parser() -> argparse.ArgumentParser:
         name="render",
         help_text="Render an audit pack HTML from a TriageRecord JSON file.",
         module=cmd_render,
+    )
+    _register_subcommand(
+        subparsers,
+        name="migrate",
+        help_text=(
+            "Up-migrate records to a newer output-contract version."
+        ),
+        module=cmd_migrate,
     )
     _register_subcommand(
         subparsers,

@@ -24,7 +24,7 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 | Phase 5: Operational Hardening | live |
 | Phase 6: Production Polish | in progress |
 
-Current framework version: `0.11.0`. Test suite: 1254 tests, 100% coverage across eleven Python packages.
+Current framework version: `0.12.0`. Test suite: 1315 tests, 100% coverage across twelve Python packages.
 
 ## What's in this repository
 
@@ -58,6 +58,8 @@ Current framework version: `0.11.0`. Test suite: 1254 tests, 100% coverage acros
 
 `tenancy/` provides per-tenant configuration for the consultancy deployment model, where one operator runs triage on behalf of several client organizations. As of 0.10.0, `TenantConfig` carries the settings that differ per client (model routing, fallback models, circuit breaker, applicable regulation set, and free-form metadata) and `TenantRegistry` holds the set of tenants with lookup by `tenant_id` and JSON file loading. Regulation sets are validated against the live corpus registry so a tenant cannot be configured for a regulation the framework has no corpus for. The `SYSTEM_PROMPT` stays uniform across all tenants by design, so every tenant's decisions trace to the identical version-pinned reasoning. As of 0.10.0 this is the configuration foundation only; tenant-scoped agent construction and a required `tenant_id` field on records (the framework's first breaking schema change) arrive in a subsequent sub-system. See `docs/multi-tenancy-guide.md`.
 
+`migration/` up-migrates triage records across output-contract versions (1.0.0 through 1.3.0). As of 0.12.0, `migrate_record` restamps additive hops and assigns a `tenant_id` on the 1.2.0-to-1.3.0 tenancy hop via a caller-supplied resolver (`fixed_tenant_resolver` for a whole batch, `mapping_tenant_resolver` for per-record assignment), optionally constrained to a `TenantRegistry`. The engine is idempotent at the target, refuses downward migration, validates output against the target contract, and never defaults a tenant silently. The `vrt migrate` CLI subcommand wraps it. This is the safety net for the SS2 breaking change: it is how a deployment carries pre-1.3.0 records forward. See `docs/migration-guide.md`.
+
 ### Documentation
 
 The phase-by-phase design documents live in `docs/`:
@@ -71,6 +73,7 @@ The phase-by-phase design documents live in `docs/`:
 - `docs/cost-tracking-guide.md` covers the `cost_estimate` field on `TriageRecord`, the published price table (what's covered, what's not, how to refresh, how to override with negotiated enterprise rates), the `--cost-budget` CLI flag and its limitations, and the patterns for answering customer pricing conversations.
 - `docs/model-fallback-guide.md` covers automatic model fallback and circuit breaking: the `fallback_models` and `circuit_breaker` config, the breaker state machine, the observability signals, the pluggable state backend for multi-process deployments, the permissive failure-counting caveat, and the cost-tracking interaction.
 - `docs/multi-tenancy-guide.md` covers the per-tenant configuration model for the consultancy deployment: `TenantConfig`, `TenantRegistry`, the JSON config format, what is and is not per-tenant (and why the system prompt stays uniform), and the roadmap to tenant-scoped records.
+- `docs/migration-guide.md` covers up-migrating records across output-contract versions: when migration is needed, the additive-versus-tenancy hop distinction, the explicit tenant-assignment decision and resolvers, the `vrt migrate` CLI, input shapes, exit codes, and programmatic usage.
 - `docs/maintenance-workflow.md` documents the procedures for maintainers: version bumps, SYSTEM_PROMPT updates, corpus refreshes, price table refreshes, model dependency upgrades, schema evolution, security advisory response, and the release checklist
 - `docs/corpus-manifest.md` documents the regulatory corpora the framework supports plus licensing notes per regulation
 - Each Python package additionally carries its own `README.md` with package-specific design rationale
@@ -101,11 +104,12 @@ Python 3.11 or later required.
 
 ## CLI
 
-After installation, the `vrt` command-line tool is available with five subcommands:
+After installation, the `vrt` command-line tool is available with six subcommands:
 
 ```bash
 vrt triage submission.json --output record.json   # run the agent on a submission
 vrt render record.json --output audit-pack.html   # render an audit pack HTML
+vrt migrate record.json --to 1.3.0 --tenant-id acme-bank  # up-migrate records to a newer contract
 vrt drift                                         # check classification drift
 vrt corpus list                                   # list registered regulation corpora
 vrt corpus build nist-ai-rmf                      # build an IndexBundle

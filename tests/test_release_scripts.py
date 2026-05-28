@@ -283,6 +283,7 @@ def test_coverage_packages_list_includes_resilience() -> None:
     assert "resilience" in prepare_release._COVERAGE_PACKAGES
     assert "pricing" in prepare_release._COVERAGE_PACKAGES
     assert "tenancy" in prepare_release._COVERAGE_PACKAGES
+    assert "migration" in prepare_release._COVERAGE_PACKAGES
 
 
 def test_manual_reminders_nonempty() -> None:

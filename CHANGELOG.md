@@ -10,6 +10,12 @@ and the framework adheres to [Semantic Versioning](https://semver.org/)
 (pre-1.0: breaking changes may ride in minor bumps).
 
 
+## [0.12.0]
+
+_sub-system 12, Phase 7 SS3_
+
+schema migration engine and the `vrt migrate` CLI subcommand. New `migration` package up-migrates triage records across the output-contract version chain (1.0.0 -> 1.1.0 -> 1.2.0 -> 1.3.0). The additive hops are version restamps (an older record is already structurally valid under the newer additive-optional contract); the 1.2.0 -> 1.3.0 hop is the one real migration, assigning a tenant_id to records that predate tenancy. `migrate_record(record, target_version, tenant_resolver)` is the core; it is idempotent at the target, refuses downward migration, and validates its output against the target contract before returning. Two tenant resolvers are provided: `fixed_tenant_resolver` (assign one tenant to a whole batch) and `mapping_tenant_resolver` (assign per record by decision_id), both optionally constrained to a TenantRegistry so an unknown tenant id is rejected. The engine never defaults a tenant silently (decision D4): a record crossing the tenancy boundary without a tenant_id and without a resolver raises, because migration is an operator-initiated batch action where there is always a human who can answer whose records these are. The sentinel `__default__` is reachable only by passing it explicitly. New sixth CLI subcommand `vrt migrate` reads a single record or a JSONL/array batch, requires `--tenant-id` or `--tenant-map` (mutually exclusive) for the tenancy hop, accepts an optional `--tenants` registry, and writes to stdout or `--output`. This is the sub-system that makes the SS2 breaking change safe: it is how a deployment carries pre-1.3.0 records forward. Minor bump: new public package and CLI subcommand, no breaking change.
+
 ## [0.11.0]
 
 _sub-system 11, Phase 7 SS2_

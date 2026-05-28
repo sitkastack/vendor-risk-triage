@@ -54,7 +54,7 @@ jobs:
           "
 
       - name: Run pytest with coverage
-        run: pytest -v --cov=_version --cov=agent --cov=cli --cov=eval --cov=ingestion --cov=observability --cov=pricing --cov=resilience --cov=retrieval --cov=reporting --cov=tenancy --cov-report=term-missing --cov-fail-under=95
+        run: pytest -v --cov=_version --cov=agent --cov=cli --cov=eval --cov=ingestion --cov=observability --cov=pricing --cov=resilience --cov=retrieval --cov=reporting --cov=tenancy --cov=migration --cov-report=term-missing --cov-fail-under=95
 
       - name: Check for classification drift against baseline
         run: |
