@@ -115,16 +115,25 @@ def sox_pdf() -> Path:
 
 @pytest.fixture(scope="session")
 def anthropic_api_key() -> str:
-    """Skips real-LLM tests when ANTHROPIC_API_KEY is not set.
+    """Skips real-LLM tests when ANTHROPIC_API_KEY is missing or a placeholder.
 
-    Real-LLM tests are gated by both the ``real_llm`` marker AND
-    presence of an API key. A contributor running
-    ``pytest -m real_llm`` without an API key gets a clean skip
-    rather than an Anthropic SDK error.
+    Real-LLM tests are gated by both the ``real_llm`` marker AND a
+    valid-looking API key. A contributor running
+    ``pytest -m real_llm`` (or ``-m integration``, which collects the
+    dual-tagged real-LLM smoke test) without a key, OR with a
+    placeholder value exported (a common pattern in venv setups),
+    gets a clean skip rather than an Anthropic SDK 401.
+
+    Real Anthropic API keys start with ``sk-ant-``. Anything else
+    (empty, whitespace, ``placeholder``, an OpenAI key, etc.) is
+    treated as absent.
     """
-    key = os.environ.get("ANTHROPIC_API_KEY")
-    if not key:
-        pytest.skip("ANTHROPIC_API_KEY not set; skipping real-LLM test.")
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key or not key.startswith("sk-ant-"):
+        pytest.skip(
+            "ANTHROPIC_API_KEY missing or appears to be a placeholder; "
+            "skipping real-LLM test."
+        )
     return key
 
 
