@@ -148,11 +148,22 @@ def test_corpus_no_action_returns_2(capsys) -> None:
 
 
 def test_corpus_build_unknown_regulation_returns_2(capsys) -> None:
-    """vrt corpus build nonexistent-corpus exits 2."""
+    """vrt corpus build nonexistent-corpus exits 2 with a clear error.
+
+    As of 1.0.3, the error wording is "unknown regulation" (the
+    previous "unknown or non-committed" wording was correct on its
+    face but conflated two distinct error conditions: name not in
+    registry, vs name in registry but local-only). 1.0.3 separates
+    them: local-only corpora can now be built when explicitly named,
+    so the single-name path only rejects truly unknown names.
+    """
     exit_code = main(["corpus", "build", "no-such-regulation"])
     assert exit_code == 2
     captured = capsys.readouterr()
-    assert "unknown or non-committed" in captured.err
+    assert "unknown regulation" in captured.err
+    # The list of registered names is included to help the operator
+    # discover the right spelling.
+    assert "Registered names:" in captured.err
 
 
 # -- render subcommand ---------------------------------------------------
@@ -569,6 +580,58 @@ def test_corpus_build_single_via_mock(capsys, tmp_path: Path) -> None:
     mock_build_bundle.assert_called_once()
     captured = capsys.readouterr()
     assert "Built bundle" in captured.out
+
+
+def test_corpus_build_local_only_named_succeeds(capsys, tmp_path: Path) -> None:
+    """vrt corpus build <local-only-name> works when explicitly named.
+
+    Local-only corpora (osfi-e23 is the canonical example as of 1.0.3
+    introduction) are registered but intentionally excluded from
+    build-all because licensing constraints prevent redistribution.
+    Building them explicitly by name should succeed and emit a note
+    that the bundle is local-only.
+    """
+    fake_path = tmp_path / "osfi-e23.bundle.tgz"
+    with patch(
+        "scripts.build_corpus_bundles.build_bundle",
+        return_value=fake_path,
+    ) as mock_build_bundle, patch(
+        "retrieval.SentenceTransformerEmbedder",
+    ) as _mock_embedder:
+        exit_code = main([
+            "corpus", "build", "osfi-e23",
+            "--output-dir", str(tmp_path),
+        ])
+    assert exit_code == 0
+    mock_build_bundle.assert_called_once()
+    captured = capsys.readouterr()
+    # The local-only note appears so the operator knows the bundle
+    # will not be committed.
+    assert "local-only" in captured.out
+    assert "not be committed" in captured.out
+    assert "Built bundle" in captured.out
+
+
+def test_corpus_build_committed_named_no_local_only_note(
+    capsys, tmp_path: Path,
+) -> None:
+    """vrt corpus build <committed-name> does NOT emit the local-only note."""
+    fake_path = tmp_path / "fake.tgz"
+    with patch(
+        "scripts.build_corpus_bundles.build_bundle",
+        return_value=fake_path,
+    ) as mock_build_bundle, patch(
+        "retrieval.SentenceTransformerEmbedder",
+    ) as _mock_embedder:
+        exit_code = main([
+            "corpus", "build", "eu-ai-act",
+            "--output-dir", str(tmp_path),
+        ])
+    assert exit_code == 0
+    mock_build_bundle.assert_called_once()
+    captured = capsys.readouterr()
+    # eu-ai-act is committed; the local-only note should NOT appear.
+    assert "local-only" not in captured.out
 
 
 def test_corpus_build_failure_returns_1(capsys, tmp_path: Path) -> None:

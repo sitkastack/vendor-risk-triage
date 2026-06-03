@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "1.0.2"
+FRAMEWORK_VERSION: str = "1.0.3"
 """Semver of the framework's code.
 
 Bumped on any behavior change. From 1.0.0 onward, breaking changes to
@@ -45,6 +45,38 @@ versions remain forward-compatible via the migration engine
 (``vrt migrate``).
 
 History:
+
+- 1.0.3 (CLI corpus build allows local-only). Fixes
+  ``vrt corpus build <name>`` to accept any registered corpus name,
+  including those marked local-only (e.g. ``osfi-e23``, which is
+  registered but excluded from build-all because Crown copyright
+  prevents redistribution of the source PDF). Building a local-only
+  corpus by explicit name now succeeds and prints a one-line note
+  that the resulting bundle is local-only and will not be committed.
+  Building all (``vrt corpus build`` with no name) still skips
+  local-only corpora as before. The framework continues to refuse
+  auto-redistribution of licensed material.
+  The previous error message "unknown or non-committed regulation"
+  conflated two distinct conditions (truly unknown name vs registered
+  but local-only); the new message "unknown regulation 'X'.
+  Registered names: ..." only fires when the name is not in
+  ``CORPUS_REGISTRY`` at all. The local-only path takes precedence
+  on a known local-only name and proceeds to build with the warning.
+  Discovered during the same five-vendor newsletter run that
+  surfaced the 1.0.2 ``--corpus`` flag gap: the new flag needed a
+  bundle on disk, but ``vrt corpus build osfi-e23`` refused even
+  though the OSFI PDF was cached and ready, because the build path
+  intentionally allowlisted only committed corpora. The same
+  newsletter run is the test case that revealed this is an
+  operationally-important fix, not a theoretical one.
+  No schema change. No agent code change. No output-contract change.
+  No change to behavior when --corpus is omitted on triage.
+  Test count 1351 -> 1353 (+2 new tests in
+  ``test_cli_dispatcher.py``: local-only-named-succeeds, and
+  committed-named-no-local-only-note). One existing test updated
+  for the new error wording. Coverage 100% across all packages
+  including cmd_corpus.py (62 statements, 0 missing). Patch bump:
+  additive CLI capability, no breaking surface change.
 
 - 1.0.2 (CLI corpus grounding). Adds ``--corpus NAME`` and
   ``--top-k N`` flags to ``vrt triage``. When ``--corpus`` is set,

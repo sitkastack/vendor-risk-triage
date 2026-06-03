@@ -94,6 +94,7 @@ def _run_build(args: argparse.Namespace) -> int:
             build_bundle,
         )
         from retrieval import SentenceTransformerEmbedder
+        from retrieval.corpora import CORPUS_REGISTRY
     except ImportError as exc:  # pragma: no cover - defensive; framework's own modules always importable in normal operation
         print(
             f"ERROR: could not import build_corpus_bundles: {exc}",
@@ -103,22 +104,39 @@ def _run_build(args: argparse.Namespace) -> int:
 
     try:
         if args.regulation is None:
-            # Build all committed corpora
+            # Build all committed corpora. Local-only corpora are
+            # intentionally excluded from build-all (they have
+            # licensing constraints that prevent redistribution);
+            # operators build them explicitly by name.
             paths = build_all(output_root=args.output_dir)
             print(f"\nBuilt {len(paths)} bundle(s):")
             for p in paths:
                 print(f"  - {p}")
             return 0
 
-        # Build a single named corpus
-        if args.regulation not in _COMMITTED_CORPORA:
+        # Build a single named corpus. Accept any name registered in
+        # CORPUS_REGISTRY, including local-only corpora that
+        # build_all intentionally skips. The bundle file lands in
+        # the local repo's corpora/<name>/ directory; whether it
+        # gets committed is a separate decision (the framework's
+        # .gitignore excludes local-only bundles by default).
+        if args.regulation not in CORPUS_REGISTRY:
             print(
-                f"ERROR: unknown or non-committed regulation "
-                f"'{args.regulation}'. Committed names: "
-                f"{', '.join(_COMMITTED_CORPORA)}",
+                f"ERROR: unknown regulation '{args.regulation}'. "
+                f"Registered names: "
+                f"{', '.join(sorted(CORPUS_REGISTRY.keys()))}",
                 file=sys.stderr,
             )
             return 2
+
+        is_local_only = args.regulation not in _COMMITTED_CORPORA
+        if is_local_only:
+            print(
+                f"Note: '{args.regulation}' is registered as "
+                f"local-only (licensing constraints prevent "
+                f"redistribution). Building the bundle locally; "
+                f"it will not be committed to the repo."
+            )
 
         embedder = SentenceTransformerEmbedder()
         path = build_bundle(

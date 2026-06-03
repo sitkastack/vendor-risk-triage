@@ -1,6 +1,6 @@
 [project]
 name = "vendor-risk-triage"
-version = "1.0.2"
+version = "1.0.3"
 description = "Reference implementation of an AI agent for vendor risk triage. Part of the sitkastack Framework."
 requires-python = ">=3.11"
 authors = [{name = "Robyn Toor", email = "robyn@sitkastack.com"}]
