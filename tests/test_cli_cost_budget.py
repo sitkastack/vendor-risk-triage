@@ -35,8 +35,14 @@ def _make_args(
     model: str = None,
     cost_budget: float = None,
     max_output_tokens: int = None,
+    corpus: str = None,
+    top_k: int = 5,
 ) -> argparse.Namespace:
-    """Build an argparse Namespace matching cmd_triage's expectations."""
+    """Build an argparse Namespace matching cmd_triage's expectations.
+
+    ``corpus`` and ``top_k`` default to "no corpus loaded" — matching
+    the 1.0.1 behavior preserved by the 1.0.2 --corpus addition.
+    """
     return argparse.Namespace(
         submission=submission,
         output=output,
@@ -44,6 +50,8 @@ def _make_args(
         model=model,
         cost_budget=cost_budget,
         max_output_tokens=max_output_tokens,
+        corpus=corpus,
+        top_k=top_k,
     )
 
 

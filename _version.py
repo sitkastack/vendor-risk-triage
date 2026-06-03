@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "1.0.1"
+FRAMEWORK_VERSION: str = "1.0.2"
 """Semver of the framework's code.
 
 Bumped on any behavior change. From 1.0.0 onward, breaking changes to
@@ -45,6 +45,34 @@ versions remain forward-compatible via the migration engine
 (``vrt migrate``).
 
 History:
+
+- 1.0.2 (CLI corpus grounding). Adds ``--corpus NAME`` and
+  ``--top-k N`` flags to ``vrt triage``. When ``--corpus`` is set,
+  the CLI loads the corresponding IndexBundle from
+  ``corpora/<NAME>/<NAME>.bundle.tgz``, derives a BM25 query from
+  the submission's narrative fields (AI feature description, PII
+  handling notes and categories, model providers, vendor
+  classification, AI usage level), retrieves the top-K chunks, and
+  passes them to ``agent.triage`` as ``regulation_chunks`` for
+  citation in the produced TriageRecord. When ``--corpus`` is
+  omitted, behavior is identical to 1.0.1 (JSON-prose-only triage,
+  no regulation context). The flag closes the gap that the agent's
+  Python API supported ``regulation_chunks`` since 0.6.0 but the
+  CLI did not expose it. Discovered during a five-vendor public-
+  triage newsletter run where a one-off Python script
+  (``vrt-triage-with-corpus.py``) was used as a workaround; the
+  patch graduates that workaround into the framework. New module-
+  level helpers ``_build_corpus_query`` and ``_load_and_retrieve``
+  in ``cli/cmd_triage.py``. New ``_CorpusLoadError`` exception
+  surfaces tooling failures (corrupt bundle, missing retrieval
+  modules) distinctly from data conditions (empty retrieval). Exit
+  codes preserved: 0 success, 1 for runtime/data failure (now
+  including empty retrieval), 2 for setup error (now including
+  unknown corpus name and out-of-range ``--top-k``). No schema
+  change. No agent or output-contract change. Test count 1331 ->
+  1351 (+20 new tests in ``test_cli_triage_corpus.py``). Coverage
+  100% across all packages including the new helpers. Patch bump:
+  additive CLI flag, no breaking surface change.
 
 - 1.0.1 (documentation correction). Patch release fixing a writing
   error in the 1.0.0 History entry's CLI surface listing. The shipped

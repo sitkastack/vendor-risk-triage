@@ -112,6 +112,7 @@ After installation, the `vrt` command-line tool is available with six subcommand
 
 ```bash
 vrt triage submission.json --output record.json   # run the agent on a submission
+vrt triage submission.json --corpus nist-ai-rmf   # corpus-grounded triage (added 1.0.2)
 vrt render record.json --output audit-pack.html   # render an audit pack HTML
 vrt migrate record.json --to 1.3.0 --tenant-id acme-bank  # up-migrate records to a newer contract
 vrt drift                                         # check classification drift
