@@ -34,7 +34,7 @@ from __future__ import annotations
 __all__ = ["FRAMEWORK_VERSION"]
 
 
-FRAMEWORK_VERSION: str = "1.0.3"
+FRAMEWORK_VERSION: str = "1.0.4"
 """Semver of the framework's code.
 
 Bumped on any behavior change. From 1.0.0 onward, breaking changes to
@@ -45,6 +45,39 @@ versions remain forward-compatible via the migration engine
 (``vrt migrate``).
 
 History:
+
+- 1.0.4 (CLI local-only corpus build skips hash verification).
+  Completes the chain started by 1.0.2 (``--corpus`` flag) and
+  1.0.3 (build accepts local-only names): ``build_bundle`` now
+  accepts a ``verify`` parameter that is forwarded to
+  ``fetch_corpus``. ``vrt corpus build <name>`` passes
+  ``verify=False`` automatically when the named corpus is
+  registered as local-only, and ``verify=True`` for committed
+  corpora (preserving the existing pin-enforcement behavior). The
+  rationale: local-only corpora like OSFI E-23 use placeholder
+  (all-zeros) SHA-256 pins by design because the upstream
+  endpoint serves byte-different content on every fetch (the
+  Drupal print-PDF route embeds a per-fetch token), so
+  pin-verification would always fail for them. The integration
+  suite already used ``verify=False`` for OSFI; this patch brings
+  the build path into alignment. Committed corpora are unaffected:
+  their pins are real and continue to be enforced.
+  Discovered as the third blocker in the same five-vendor
+  newsletter run that produced 1.0.2 and 1.0.3. After 1.0.3 made
+  ``vrt corpus build osfi-e23`` allowable, the build itself still
+  failed at ``fetch_corpus``'s pin check. 1.0.4 closes that gap.
+  The local-only build note is also extended to surface the
+  hash-verification skip so the operator knows what is happening.
+  No schema change. No agent code change. No output-contract
+  change. SYSTEM_PROMPT_HASH stays 69ef583c6dbe. Test count stays
+  1353 (the two pre-existing local-only/committed tests gained
+  assertions on the ``verify`` flag pass-through; no new tests
+  were needed). Coverage remains 100% across all twelve framework
+  packages. cli/cmd_corpus.py at 62 statements 0 missing.
+  scripts/build_corpus_bundles.py at 27% coverage (unchanged from
+  baseline; the build script is not in the framework coverage
+  gate per the existing convention). Patch bump: additive flag
+  pass-through, no breaking surface change.
 
 - 1.0.3 (CLI corpus build allows local-only). Fixes
   ``vrt corpus build <name>`` to accept any registered corpus name,

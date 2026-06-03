@@ -588,8 +588,10 @@ def test_corpus_build_local_only_named_succeeds(capsys, tmp_path: Path) -> None:
     Local-only corpora (osfi-e23 is the canonical example as of 1.0.3
     introduction) are registered but intentionally excluded from
     build-all because licensing constraints prevent redistribution.
-    Building them explicitly by name should succeed and emit a note
-    that the bundle is local-only.
+    Building them explicitly by name should succeed, emit a note
+    that the bundle is local-only, and (as of 1.0.4) pass
+    verify=False to build_bundle so non-deterministic source bytes
+    don't trip the pin-verification gate.
     """
     fake_path = tmp_path / "osfi-e23.bundle.tgz"
     with patch(
@@ -604,18 +606,30 @@ def test_corpus_build_local_only_named_succeeds(capsys, tmp_path: Path) -> None:
         ])
     assert exit_code == 0
     mock_build_bundle.assert_called_once()
+    # As of 1.0.4: local-only corpus must pass verify=False so
+    # placeholder pins on non-deterministic source bytes (OSFI's
+    # Drupal print-PDF endpoint) don't block the build.
+    call_kwargs = mock_build_bundle.call_args.kwargs
+    assert call_kwargs.get("verify") is False
     captured = capsys.readouterr()
     # The local-only note appears so the operator knows the bundle
     # will not be committed.
     assert "local-only" in captured.out
     assert "not be committed" in captured.out
+    # The hash-verification skip is also surfaced in the note.
+    assert "verification is skipped" in captured.out
     assert "Built bundle" in captured.out
 
 
 def test_corpus_build_committed_named_no_local_only_note(
     capsys, tmp_path: Path,
 ) -> None:
-    """vrt corpus build <committed-name> does NOT emit the local-only note."""
+    """vrt corpus build <committed-name> does NOT emit the local-only note.
+
+    As of 1.0.4, committed corpora are also confirmed to pass
+    verify=True to build_bundle (the default) so their real pinned
+    hashes get checked.
+    """
     fake_path = tmp_path / "fake.tgz"
     with patch(
         "scripts.build_corpus_bundles.build_bundle",
@@ -629,6 +643,10 @@ def test_corpus_build_committed_named_no_local_only_note(
         ])
     assert exit_code == 0
     mock_build_bundle.assert_called_once()
+    # As of 1.0.4: committed corpora must pass verify=True so pinned
+    # hashes are enforced.
+    call_kwargs = mock_build_bundle.call_args.kwargs
+    assert call_kwargs.get("verify") is True
     captured = capsys.readouterr()
     # eu-ai-act is committed; the local-only note should NOT appear.
     assert "local-only" not in captured.out

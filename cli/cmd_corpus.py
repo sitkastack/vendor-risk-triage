@@ -135,7 +135,10 @@ def _run_build(args: argparse.Namespace) -> int:
                 f"Note: '{args.regulation}' is registered as "
                 f"local-only (licensing constraints prevent "
                 f"redistribution). Building the bundle locally; "
-                f"it will not be committed to the repo."
+                f"it will not be committed to the repo. Hash "
+                f"verification is skipped (local-only corpora may "
+                f"have non-deterministic source bytes; pins are "
+                f"placeholders by design)."
             )
 
         embedder = SentenceTransformerEmbedder()
@@ -143,6 +146,7 @@ def _run_build(args: argparse.Namespace) -> int:
             args.regulation,
             output_root=args.output_dir,
             embedder=embedder,
+            verify=not is_local_only,
         )
         print(f"\nBuilt bundle: {path}")
         return 0

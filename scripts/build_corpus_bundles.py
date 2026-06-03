@@ -73,11 +73,24 @@ def build_bundle(
     corpus_name: str,
     output_root: Path,
     embedder: SentenceTransformerEmbedder,
+    verify: bool = True,
 ) -> Path:
-    """Build one bundle. Returns the saved bundle path."""
+    """Build one bundle. Returns the saved bundle path.
+
+    ``verify`` is forwarded to ``fetch_corpus``. The committed-corpora
+    path always uses ``verify=True`` (the pinned hashes are real and
+    must match). Local-only corpora whose source bytes are
+    non-deterministic (e.g. OSFI E-23, which serves byte-different
+    content on every fetch from the Drupal print-PDF endpoint) need
+    ``verify=False`` to be buildable at all; their pins are
+    placeholders by design (see ``retrieval/corpora.py`` and the
+    0.14.0 framework history). The CLI's ``vrt corpus build`` chooses
+    automatically based on whether the corpus is in
+    ``_COMMITTED_CORPORA``.
+    """
     source = CORPUS_REGISTRY[corpus_name]
     print(f"\n[{corpus_name}] fetching/verifying cached PDF...")
-    pdf_path = fetch_corpus(corpus_name)
+    pdf_path = fetch_corpus(corpus_name, verify=verify)
     print(f"[{corpus_name}] PDF at {pdf_path} ({pdf_path.stat().st_size:,} bytes)")
 
     print(f"[{corpus_name}] chunking with sectionize=True...")
