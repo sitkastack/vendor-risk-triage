@@ -55,7 +55,7 @@ def _record(version: str, decision_id: str = "d-001", with_tenant: bool = False)
 
 
 def test_known_versions_ascending() -> None:
-    assert KNOWN_VERSIONS == ("1.0.0", "1.1.0", "1.2.0", "1.3.0")
+    assert KNOWN_VERSIONS == ("1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0")
 
 
 # -- additive hops (restamp) ---------------------------------------------
@@ -165,6 +165,72 @@ def test_unknown_source_raises() -> None:
     rec["output_schema_version"] = "8.8.8"
     with pytest.raises(MigrationError, match="unknown source"):
         migrate_record(rec, "1.3.0")
+
+
+# -- determinism hop (1.3.0 -> 1.4.0) ------------------------------------
+
+
+def test_determinism_hop_adds_attestation_with_migrated_from() -> None:
+    """A 1.3.0 record migrated to 1.4.0 gains a 'migrated_from' attestation."""
+    result = migrate_record(_record("1.3.0", with_tenant=True), "1.4.0")
+    assert result["output_schema_version"] == "1.4.0"
+    attestation = result["determinism_attestation"]
+    assert attestation["migrated_from"] == "1.3.0"
+    assert attestation["contract_honored"] is False
+    # Every data field is null: the contract was not in force at
+    # production time, so nothing can be retroactively measured.
+    assert attestation["effective_temperature"] is None
+    assert attestation["provider"] is None
+    assert attestation["effective_model_id"] is None
+    assert attestation["fallback"] is None
+    assert attestation["sampling_profile_hash"] is None
+    assert attestation["system_prompt_hash"] is None
+    assert attestation["corpus_bundle_hash"] is None
+    # contract_version is null because no contract was in force.
+    assert attestation["contract_version"] is None
+
+
+def test_determinism_hop_from_1_0_0_through_to_1_4_0() -> None:
+    """A 1.0.0 record migrates straight to 1.4.0 with attestation + tenant."""
+    result = migrate_record(
+        _record("1.0.0"), "1.4.0", fixed_tenant_resolver("globex")
+    )
+    assert result["output_schema_version"] == "1.4.0"
+    assert result["tenant_id"] == "globex"
+    # The migrated_from records the SOURCE version, not 1.3.0
+    # (the determinism boundary).
+    assert result["determinism_attestation"]["migrated_from"] == "1.0.0"
+
+
+def test_determinism_hop_preserves_existing_attestation_if_present() -> None:
+    """A record that already carries an attestation keeps it."""
+    rec = _record("1.4.0", with_tenant=True)
+    rec["determinism_attestation"] = {
+        "effective_temperature": 0.0,
+        "contract_honored": True,
+        "provider": "anthropic",
+        "effective_model_id": "anthropic:claude-sonnet-4-5",
+        "fallback": None,
+        "sampling_profile_hash": "abcdef012345",
+        "system_prompt_hash": "f" * 64,
+        "corpus_bundle_hash": "0" * 64,
+        "contract_version": "1.0.0",
+        "migrated_from": None,
+    }
+    result = migrate_record(rec, "1.4.0")
+    # Idempotent no-op preserves the attestation untouched.
+    assert result["determinism_attestation"]["contract_honored"] is True
+    assert result["determinism_attestation"]["migrated_from"] is None
+
+
+def test_determinism_hop_validates_against_1_4_0() -> None:
+    """The migrated attestation passes 1.4.0 schema validation."""
+    from schemas.validate import validate_output
+    result = migrate_record(
+        _record("1.3.0", with_tenant=True), "1.4.0"
+    )
+    ok, errors = validate_output(result)
+    assert ok, f"migrated 1.4.0 record should validate: {errors}"
 
 
 # -- output validation ---------------------------------------------------

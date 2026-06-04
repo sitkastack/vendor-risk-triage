@@ -92,8 +92,10 @@ from agent.output_models import (
     ConfidenceSignal,
     CostEstimate,
     DEFAULT_TENANT_ID,
+    DeterminismAttestation,
     Disposition,
     EvidenceCitation,
+    FallbackRecord,
     FrameworkTag,
     MitigationString,
     ProseString,
@@ -113,10 +115,13 @@ __all__ = [
     "TriageAgent",
     "TriageAgentConfig",
     "TriageInputError",
+    "TriageAgentError",
     "FRAMEWORK_VERSION",
     "OUTPUT_SCHEMA_VERSION",
+    "CONTRACT_VERSION",
     "SYSTEM_PROMPT",
     "SYSTEM_PROMPT_HASH",
+    "SYSTEM_PROMPT_HASH_FULL",
     "DEFAULT_MODEL",
 ]
 
@@ -125,10 +130,21 @@ __all__ = [
 # constructing an agent. FRAMEWORK_VERSION is imported at the top of the
 # module from the canonical _version source.
 
-OUTPUT_SCHEMA_VERSION: str = "1.3.0"
+OUTPUT_SCHEMA_VERSION: str = "1.4.0"
 """Semver of the output contract this agent emits to.
 
 Locked to the Phase 1 contract at ``schemas/output-contract-1.0.0.schema.json``.
+"""
+
+CONTRACT_VERSION: str = "1.0.0"
+"""Semver of the determinism contract. Independent of FRAMEWORK_VERSION.
+
+The contract text and per-(provider, model) variance band live at
+``docs/determinism-attestation.md``. ``CONTRACT_VERSION`` bumps only when
+the contract text changes; a framework patch bump (1.0.5 -> 1.0.6) for an
+unrelated CLI fix does NOT change the contract version. Sub-systems that
+need to filter records by contract identity key off this constant via
+``determinism_attestation.contract_version``.
 """
 
 _logger = logging.getLogger("vrt.agent")
@@ -270,10 +286,78 @@ If no regulation context is provided, proceed with the rules above; the absence 
 SYSTEM_PROMPT_HASH: str = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
 """First 12 hex chars of SHA-256 of the system prompt.
 
+Framework-identity prefix. Kept for backward compatibility with consumers
+that key off ``agent_version`` (which embeds this prefix). For audit-chain-
+of-trust purposes, use ``SYSTEM_PROMPT_HASH_FULL`` instead: the 12-char
+prefix has 48-bit collision resistance which is acceptable for human-
+readable identity but insufficient as an adversarial audit anchor.
+
 Recorded in agent_version of every TriageRecord. Stable across runs;
 changes if and only if SYSTEM_PROMPT changes. Auditors can recompute this
 from the prompt text in source control to verify a given record was
 produced by the prompt they have in front of them.
+"""
+
+def _parse_provider_and_model(model: Any) -> tuple[str, str]:
+    """Extract (provider, effective_model_id) from a PydanticAI model spec.
+
+    Returns ('unknown', '<class-name>') for Model instances we cannot
+    identify; this is the safe default for FunctionModel / TestModel
+    fixtures and any custom Model subclass. The determinism contract
+    explicitly treats 'unknown' provider as outside the contract
+    (contract_honored=false).
+
+    The provider strings emitted here match the enum in the schema:
+    ``anthropic``, ``openai``, ``google-gla``, ``google-vertex``,
+    ``test`` (FunctionModel and TestModel), ``unknown``.
+    """
+    if isinstance(model, str):
+        if ":" in model:
+            prov, model_id = model.split(":", 1)
+            return prov, model_id
+        # Bare model name with no provider prefix; default provider
+        # is treated as unknown so contract_honored is conservatively false.
+        return "unknown", model
+    # Model instance. Identify FunctionModel / TestModel via class name;
+    # everything else is unknown.
+    cls_name = type(model).__name__
+    if cls_name in ("FunctionModel", "TestModel"):
+        return "test", cls_name
+    return "unknown", cls_name
+
+
+def _compute_sampling_profile_hash(
+    provider: str, effective_model_id: str, temperature: float,
+) -> str:
+    """Compute the twelve-char sampling profile hash.
+
+    SHA-256 prefix over a canonical JSON encoding of the
+    (provider, effective_model_id, temperature) triple. Used as a join
+    key by downstream consumers that need to bucket records by sampling
+    config without parsing strings.
+    """
+    payload = json.dumps(
+        {
+            "provider": provider,
+            "effective_model_id": effective_model_id,
+            "effective_temperature": float(temperature),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
+SYSTEM_PROMPT_HASH_FULL: str = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+"""Full 64-character SHA-256 hex digest of the system prompt.
+
+Audit anchor written to ``determinism_attestation.system_prompt_hash`` on
+every record produced under the determinism contract (1.4.0+). The full
+hash has 256-bit collision resistance, sufficient as an adversarial audit
+anchor. When a deployment uses ``TriageAgentConfig.system_prompt`` to
+override the framework default, the override's full hash flows to the
+attestation; downstream consumers can compare against this constant to
+detect override.
 """
 
 
@@ -283,6 +367,22 @@ class TriageInputError(ValueError):
     Distinct from Pydantic's ValidationError to let callers handle agent-level
     errors (missing required input fields, unsupported submission shape)
     separately from output validation errors.
+    """
+
+
+class TriageAgentError(RuntimeError):
+    """Raised at agent construction when the determinism contract is violated.
+
+    The framework refuses to construct an agent that would silently produce
+    records under a configuration the contract forbids (e.g. non-zero
+    temperature without the explicit legacy opt-out). Catching this class
+    distinguishes a contract-refusal from input-level errors at triage time.
+
+    Construction can be made permissive via
+    ``TriageAgentConfig(allow_nondeterministic_legacy=True)``; the
+    framework then emits a ``DeprecationWarning`` and marks every
+    produced record's ``determinism_attestation.contract_honored`` as
+    ``False`` so the audit trail records the deviation.
     """
 
 
@@ -417,6 +517,24 @@ class TriageAgentConfig:
     fallback_models: list[Any] = field(default_factory=list)  # list of PydanticAI model identifiers (strings) or Model instances
     circuit_breaker: Optional[Any] = None  # Optional["CircuitBreakerConfig"]
     tenant: Optional[Any] = None  # Optional["TenantConfig"]: when set, the agent sources model routing from it and stamps records with its tenant_id
+    temperature: float = 0.0
+    """LLM sampling temperature. Default 0.0 is the deterministic-contract
+    value. Set non-zero to explicitly exit the determinism contract for
+    exploration or eval use; produced records carry
+    ``determinism_attestation.contract_honored=False`` so audit consumers
+    can distinguish contract-honored from exploration records. See
+    ``docs/determinism-attestation.md`` for the contract text and
+    measured per-(provider, model) variance band."""
+    allow_nondeterministic_legacy: bool = False
+    """Transitional flag (deprecated as of 1.0.5; removed in 1.1.0). When
+    True, the agent accepts a user-supplied Model instance whose
+    temperature is non-zero without refusing to construct, and emits a
+    DeprecationWarning instead. Use this only for one-release-cycle
+    migration of deployments that pre-date the determinism contract and
+    cannot immediately update their Model-construction code. The clean
+    long-term migration is to set
+    ``TriageAgentConfig(temperature=N, ...)`` explicitly with N>0,
+    accepting that records carry ``contract_honored=False``."""
 
 
 class TriageAgent:
@@ -470,6 +588,38 @@ class TriageAgent:
         """
         self._config: TriageAgentConfig = config if config is not None else TriageAgentConfig()
 
+        # Determinism contract enforcement at construction. Non-zero
+        # temperature is an explicit opt-out of the contract. The
+        # framework refuses to construct an agent in that configuration
+        # unless the caller passes allow_nondeterministic_legacy=True,
+        # which trades the refuse for a DeprecationWarning + every
+        # record's determinism_attestation.contract_honored set to
+        # False. See docs/determinism-attestation.md.
+        if float(self._config.temperature) != 0.0:
+            if not self._config.allow_nondeterministic_legacy:
+                raise TriageAgentError(
+                    f"TriageAgentConfig.temperature is "
+                    f"{self._config.temperature!r}, which exits the "
+                    "determinism contract (default: 0.0). To opt out "
+                    "of the contract for exploration or eval use, pass "
+                    "TriageAgentConfig(allow_nondeterministic_legacy=True); "
+                    "produced records will carry "
+                    "determinism_attestation.contract_honored=False. "
+                    "See docs/determinism-attestation.md for the "
+                    "contract text and rationale."
+                )
+            import warnings
+            warnings.warn(
+                f"TriageAgent constructed with temperature="
+                f"{self._config.temperature!r} and "
+                "allow_nondeterministic_legacy=True. This path is "
+                "transitional; records will carry "
+                "determinism_attestation.contract_honored=False. The "
+                "legacy flag is removed in 1.1.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         # Tenant resolution. When a TenantConfig is provided, it is the
         # source of truth for this agent's model routing and tenant
         # identity (decision C1: one agent per tenant). A tenant's
@@ -518,14 +668,44 @@ class TriageAgent:
         active_prompt_hash: str = hashlib.sha256(
             active_prompt.encode("utf-8")
         ).hexdigest()[:12]
+        # Full-length system prompt hash for the determinism attestation
+        # audit anchor. Computed from the actually-loaded bytes (NOT
+        # read from SYSTEM_PROMPT_HASH_FULL constant) so a custom
+        # system_prompt override flows through faithfully.
+        self._active_system_prompt_hash_full: str = hashlib.sha256(
+            active_prompt.encode("utf-8")
+        ).hexdigest()
+        # Pin temperature via PydanticAI's model_settings parameter. This
+        # is the supported path; the model_settings dict is forwarded to
+        # the underlying provider on every call. For Model instances
+        # supplied by the user, this overrides whatever temperature the
+        # instance was configured with. The determinism_attestation
+        # field on the produced record records the effective value so
+        # audit can distinguish framework-pinned from user-configured.
         self._pydantic_agent: Agent[None, _TriageClassification] = Agent(
             model=self._config.model,
             output_type=_TriageClassification,
             system_prompt=active_prompt,
             retries=self._config.retries,
+            model_settings={"temperature": float(self._config.temperature)},
         )
         self._agent_version: str = _compose_agent_version(
             self._config.model, active_prompt_hash,
+        )
+        # Cache attestation-derived attributes at construction so every
+        # record produced by this agent gets stable values. Provider /
+        # effective_model_id parsing handles the provider:model string
+        # form; Model instances fall through to "test" provider with
+        # the model's __class__.__name__ as effective_model_id.
+        self._attestation_provider, self._attestation_model_id = (
+            _parse_provider_and_model(self._config.model)
+        )
+        self._attestation_sampling_profile_hash: str = (
+            _compute_sampling_profile_hash(
+                self._attestation_provider,
+                self._attestation_model_id,
+                float(self._config.temperature),
+            )
         )
 
         # Fallback agents: one PydanticAI Agent per configured fallback
@@ -772,7 +952,7 @@ class TriageAgent:
         prompt: str,
         correlation_id: str,
         outer_span: Any,
-    ) -> tuple[Any, str]:
+    ) -> tuple[Any, str, Optional[dict]]:
         """Run the LLM call, falling back through configured alternates.
 
         Tries the primary model first (skipping if its breaker is
@@ -783,9 +963,19 @@ class TriageAgent:
         circuit_breaker.opened, circuit_breaker.half_opened,
         circuit_breaker.closed), and increments related metrics.
 
-        Returns the (result, effective_model_id) tuple of the model
-        that successfully produced the result. Raises the last
-        exception encountered if all configured models failed.
+        Returns ``(result, effective_model_id, fallback_info)``:
+
+        - ``result``: PydanticAI run result from whichever model succeeded.
+        - ``effective_model_id``: the model that produced the result.
+        - ``fallback_info``: ``None`` if the primary succeeded; otherwise
+          a dict with keys ``reason``, ``primary_model_id``,
+          ``effective_model_id``, ``primary_provider``,
+          ``effective_provider``, ``trigger_event``. Suitable for
+          constructing a ``FallbackRecord`` on the
+          ``determinism_attestation``.
+
+        Raises the last exception encountered if all configured models
+        failed.
 
         The "vrt.llm_call" span is opened per attempt so a trace
         viewer shows each model's attempt as a distinct child of the
@@ -804,6 +994,14 @@ class TriageAgent:
             candidates.append((fallback_model_id, fallback_agent, False))
 
         last_error: Optional[Exception] = None
+        # Track why we're falling back (set on the first skip / error
+        # that causes us to leave the primary). The FallbackRecord on
+        # the determinism attestation surfaces this; it's distinct
+        # from per-attempt event labels because it identifies the
+        # PRIMARY -> EFFECTIVE transition reason rather than each
+        # attempt's failure mode.
+        fallback_reason: Optional[str] = None
+        fallback_trigger_event: Optional[str] = None
 
         for attempt_index, (model_id, pydantic_agent, is_primary) in enumerate(candidates):
             # Breaker check: skip this model if its breaker is OPEN.
@@ -857,6 +1055,14 @@ class TriageAgent:
                             "reason": "circuit_breaker_open",
                         },
                     )
+                    # First skip that takes us off the primary records
+                    # the reason on the attestation. Skips on
+                    # subsequent fallbacks do not overwrite the
+                    # original reason (the attestation surfaces the
+                    # PRIMARY -> EFFECTIVE transition cause).
+                    if is_primary and fallback_reason is None:
+                        fallback_reason = "circuit_open"
+                        fallback_trigger_event = "circuit_breaker_open"
                     continue
 
             # If this is not the primary AND we got here because a
@@ -937,7 +1143,41 @@ class TriageAgent:
                             },
                         )
 
-                return result, model_id
+                # Build fallback_info for the determinism attestation.
+                # None when the primary succeeded; otherwise the
+                # structured record identifying which fallback path
+                # executed and why.
+                fallback_info: Optional[dict] = None
+                if not is_primary:
+                    primary_provider, _ = _parse_provider_and_model(
+                        self._config.model
+                    )
+                    # For the effective model, try string-based parse
+                    # (model_id is the str(...) of the Model). If the
+                    # str doesn't carry "provider:model" we fall back
+                    # to "unknown" — which the schema accepts as a
+                    # provider value via the Literal enum.
+                    if ":" in model_id:
+                        effective_provider = model_id.split(":", 1)[0]
+                    else:
+                        effective_provider = "unknown"
+                    # Cross-provider fallbacks always exit the contract
+                    # (it's per-(provider, model)). Promote reason
+                    # accordingly when providers differ.
+                    effective_reason = fallback_reason or "transient_retry"
+                    if effective_provider != primary_provider and effective_reason != "circuit_open":
+                        effective_reason = "cross_provider"
+                    fallback_info = {
+                        "reason": effective_reason,
+                        "primary_model_id": primary_model_id,
+                        "effective_model_id": model_id,
+                        "primary_provider": primary_provider,
+                        "effective_provider": effective_provider,
+                        "trigger_event": (
+                            fallback_trigger_event or "model_call_error"
+                        ),
+                    }
+                return result, model_id, fallback_info
 
             except Exception as exc:
                 llm_duration = time.time() - llm_start_time
@@ -987,6 +1227,12 @@ class TriageAgent:
                         )
 
                 last_error = exc
+                # First error on the primary records the trigger for
+                # the FallbackRecord. Errors on a fallback model don't
+                # overwrite the original reason.
+                if is_primary and fallback_reason is None:
+                    fallback_reason = "transient_retry"
+                    fallback_trigger_event = type(exc).__name__
                 # Continue to next candidate.
 
         # All candidates exhausted. Raise the last error.
@@ -1004,6 +1250,137 @@ class TriageAgent:
                 f"or breaker thresholds."
             )
         raise last_error
+
+    def _build_determinism_attestation(
+        self,
+        regulation_chunks: Optional[list["Chunk"]] = None,
+        fallback_info: Optional[dict] = None,
+    ) -> DeterminismAttestation:
+        """Build the determinism attestation for a record produced now.
+
+        Single source of truth for the attestation: this method is the
+        canonical builder. Both the TriageRecord's
+        ``determinism_attestation`` field and any observability event
+        attestation payload derive from a single invocation of this
+        method for a given triage call, so the two views cannot diverge.
+
+        The attestation captures:
+
+        - ``effective_temperature``: the temperature actually pinned at
+          construction (matches the model_settings dict passed to
+          PydanticAI).
+        - ``contract_honored``: True iff temperature is 0, the system
+          prompt is the framework default (system_prompt_hash matches
+          ``SYSTEM_PROMPT_HASH_FULL``), and no fallback fired. Custom
+          system prompts, non-zero temperatures, and fallback firing
+          each independently flip this to False.
+        - Provider / effective_model_id derived from the configured
+          model at construction.
+        - ``system_prompt_hash``: full 64-char SHA-256 of the actually-
+          loaded SYSTEM_PROMPT bytes (computed at construction, not
+          read from the SYSTEM_PROMPT_HASH_FULL constant — handles
+          custom prompts correctly).
+        - ``corpus_bundle_hash``: per-call computation from the chunks
+          loaded for this triage. None when no corpus was loaded.
+        - ``contract_version``: the framework's contract identifier.
+        - ``migrated_from``: always None for fresh records (only set
+          on records lifted via vrt migrate).
+
+        Pass 2 NOTE (implementation feedback): fallback enum + Model-
+        instance refuse path are still TODO; this pass populates a
+        baseline attestation that survives the schema's structural
+        requirements. The next pass adds the fallback-fired path and
+        the Model-instance refuse/opt-out/legacy logic.
+        """
+        corpus_bundle_hash: Optional[str] = None
+        if regulation_chunks:
+            # Compute the bundle hash from the actually-loaded chunks
+            # for this call (not from a registry lookup), so the audit
+            # anchor reflects what the agent actually saw.
+            canonical = json.dumps(
+                [
+                    {
+                        "chunk_id": getattr(c, "chunk_id", ""),
+                        "text": getattr(c, "text", ""),
+                    }
+                    for c in regulation_chunks
+                ],
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            corpus_bundle_hash = hashlib.sha256(
+                canonical.encode("utf-8")
+            ).hexdigest()
+
+        # contract_honored is conservative: True only when the
+        # framework can attest every condition. Default to False on
+        # any uncertainty (unknown provider, non-default system prompt,
+        # non-zero temperature, fallback fired, missing corpus when
+        # one was expected).
+        is_default_prompt = (
+            self._active_system_prompt_hash_full == SYSTEM_PROMPT_HASH_FULL
+        )
+        is_known_provider = self._attestation_provider in (
+            "anthropic", "openai", "google-gla", "google-vertex",
+        )
+        temp_is_zero = float(self._config.temperature) == 0.0
+        no_fallback_fired = fallback_info is None
+        contract_honored = (
+            temp_is_zero
+            and is_default_prompt
+            and is_known_provider
+            and no_fallback_fired
+        )
+
+        # Build the FallbackRecord when a fallback fired. The schema's
+        # closed enum on `reason` is enforced by FallbackRecord's
+        # Pydantic typing; a malformed fallback_info from
+        # _run_with_fallback would raise here at construction.
+        # Model identifier strings are bounded to FallbackRecord's
+        # max_length=128 via the same head-tail truncation pattern
+        # used in _compose_agent_version. FunctionModel/TestModel
+        # produce pathologically long repr-style strings; truncating
+        # here keeps the attestation buildable on those test fixtures.
+        fallback_record: Optional[FallbackRecord] = None
+        effective_provider = self._attestation_provider
+        effective_model_id = self._attestation_model_id
+        if fallback_info is not None:
+            def _bound(s: str, limit: int = 128) -> str:
+                if len(s) <= limit:
+                    return s
+                # Head + ellipsis + tail so both the type prefix and
+                # the trailing identifier are visible in audit logs.
+                head = s[: limit // 2 - 2]
+                tail = s[-(limit - len(head) - 3):]
+                return f"{head}...{tail}"
+            fallback_record = FallbackRecord(
+                reason=fallback_info["reason"],
+                primary_model_id=_bound(fallback_info["primary_model_id"]),
+                effective_model_id=_bound(fallback_info["effective_model_id"]),
+                primary_provider=_bound(fallback_info["primary_provider"], 64),
+                effective_provider=_bound(fallback_info["effective_provider"], 64),
+                trigger_event=_bound(fallback_info["trigger_event"], 256),
+            )
+            # Overwrite the attestation's effective_* fields with the
+            # ACTUAL model that produced the record (the fallback),
+            # not the primary that was configured. Bounded by the
+            # same truncation used on the FallbackRecord above so the
+            # two views show the same identifier.
+            effective_provider = _bound(fallback_info["effective_provider"], 64)
+            effective_model_id = _bound(fallback_info["effective_model_id"])
+
+        return DeterminismAttestation(
+            effective_temperature=float(self._config.temperature),
+            contract_honored=contract_honored,
+            provider=effective_provider,
+            effective_model_id=effective_model_id,
+            fallback=fallback_record,
+            sampling_profile_hash=self._attestation_sampling_profile_hash,
+            system_prompt_hash=self._active_system_prompt_hash_full,
+            corpus_bundle_hash=corpus_bundle_hash,
+            contract_version=CONTRACT_VERSION,
+            migrated_from=None,
+        )
 
     def triage(
         self,
@@ -1165,7 +1542,7 @@ class TriageAgent:
                 # _run_with_fallback.
                 llm_start_time = time.time()
                 try:
-                    result, effective_model_id = self._run_with_fallback(
+                    result, effective_model_id, fallback_info = self._run_with_fallback(
                         prompt=_format_user_prompt(
                             submission, documents, regulation_chunks,
                         ),
@@ -1205,6 +1582,10 @@ class TriageAgent:
                     correlation_id=correlation_id,
                 )
                 with self._observability.start_span("vrt.validation"):
+                    attestation = self._build_determinism_attestation(
+                        regulation_chunks=regulation_chunks,
+                        fallback_info=fallback_info,
+                    )
                     record = TriageRecord(
                         decision_id=record_decision_id,
                         decision_timestamp=decision_timestamp,
@@ -1224,6 +1605,7 @@ class TriageAgent:
                         review_interval_days=classification.review_interval_days,
                         correlation_id=correlation_id,
                         cost_estimate=cost_estimate_obj,
+                        determinism_attestation=attestation,
                     )
                 self._observability.emit_event(
                     "validation.completed",
@@ -1257,18 +1639,37 @@ class TriageAgent:
                     triage_duration,
                 )
 
-                # Emit triage.completed
+                # Emit triage.completed. The determinism attestation
+                # is included so observability sinks see the contract
+                # posture (honored vs. exited) at the same level as
+                # the classification — operators monitoring drift
+                # across a fleet can route on contract_honored without
+                # parsing the record body.
+                completion_attributes: dict[str, Any] = {
+                    "decision_id": record.decision_id,
+                    "tier": tier_label,
+                    "disposition": disp_label,
+                    "confidence_score": record.confidence_signal.score,
+                }
+                if record.determinism_attestation is not None:
+                    completion_attributes["contract_honored"] = (
+                        record.determinism_attestation.contract_honored
+                    )
+                    completion_attributes["effective_temperature"] = (
+                        record.determinism_attestation.effective_temperature
+                    )
+                    completion_attributes["effective_model_id"] = (
+                        record.determinism_attestation.effective_model_id
+                    )
+                    completion_attributes["fallback_fired"] = (
+                        record.determinism_attestation.fallback is not None
+                    )
                 self._observability.emit_event(
                     "triage.completed",
                     status=EventStatus.SUCCESS,
                     correlation_id=correlation_id,
                     duration_ms=triage_duration * 1000,
-                    attributes={
-                        "decision_id": record.decision_id,
-                        "tier": tier_label,
-                        "disposition": disp_label,
-                        "confidence_score": record.confidence_signal.score,
-                    },
+                    attributes=completion_attributes,
                 )
                 return record
         except Exception as exc:

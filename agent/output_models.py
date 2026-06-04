@@ -283,6 +283,123 @@ class CostEstimate(BaseModel):
     price_table_version: str = Field(pattern=_PRICE_TABLE_VERSION_PATTERN)
 
 
+FallbackReason = Literal[
+    "transient_retry",
+    "hard_refusal",
+    "circuit_open",
+    "operator_pinned",
+    "cross_provider",
+]
+
+
+class FallbackRecord(BaseModel):
+    """Structured record of fallback path execution.
+
+    Replaces the bool ``fallback_fired`` flag (rejected in design review as
+    collapsing too many distinct cases). Present on
+    ``DeterminismAttestation.fallback`` when a fallback fired; null otherwise.
+
+    The ``reason`` field is a closed enum bounded to five values, so
+    observability metric labels that key off this field do not have
+    cardinality risk.
+
+    Audit invariant: ``fired`` is always ``True`` when a FallbackRecord is
+    present. The field exists so consumers serializing as JSON Lines can
+    detect "fallback path executed" without checking for object presence.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    fired: Literal[True] = True
+    reason: FallbackReason
+    primary_model_id: str = Field(min_length=1, max_length=128)
+    effective_model_id: str = Field(min_length=1, max_length=128)
+    primary_provider: str = Field(min_length=1, max_length=64)
+    effective_provider: str = Field(min_length=1, max_length=64)
+    trigger_event: str = Field(min_length=1, max_length=256)
+
+
+Provider = Literal[
+    "anthropic",
+    "openai",
+    "google-gla",
+    "google-vertex",
+    "test",
+    "unknown",
+]
+
+
+# Twelve lowercase hex chars (SHA-256 prefix).
+_SAMPLING_PROFILE_HASH_PATTERN = r"^[a-f0-9]{12}$"
+
+# Full 64 lowercase hex chars (SHA-256 hex digest).
+_FULL_HASH_PATTERN = r"^[a-f0-9]{64}$"
+
+
+class DeterminismAttestation(BaseModel):
+    """Per-record attestation of the determinism contract.
+
+    Added in output contract 1.4.0. ``contract_honored`` is the single
+    boolean a compliance lead checks; when ``True``, the framework asserts
+    the record is reproducible within the empirically-measured
+    per-(provider, model) variance band documented in
+    ``docs/determinism-attestation.md``.
+
+    Three populations of records exist after 1.0.5:
+
+    1. Pre-1.0.5 records: ``output_schema_version == "1.3.0"``, no
+       attestation. Cannot be reattested retroactively; the contract was
+       not in force at production time.
+    2. Migrated-forward records (lifted by ``vrt migrate``):
+       ``output_schema_version == "1.4.0"``, attestation present with
+       ``migrated_from == "1.3.0"``, all data fields nulled,
+       ``contract_honored == False``, ``contract_version is None``.
+    3. Fresh post-1.0.5 records: ``output_schema_version == "1.4.0"``,
+       attestation present, all data fields populated,
+       ``migrated_from is None``.
+
+    Operators distinguish the three by inspecting
+    ``(output_schema_version, migrated_from, contract_version)``.
+
+    Audit anchors:
+
+    - ``system_prompt_hash`` is the full 64-char SHA-256 of the
+      ``SYSTEM_PROMPT`` bytes loaded at agent construction, NOT the 12-char
+      framework-identity constant ``SYSTEM_PROMPT_HASH``.
+    - ``corpus_bundle_hash`` is the full 64-char SHA-256 of the bundle
+      bytes actually loaded for the triage call, NOT a registry lookup.
+    - ``contract_version`` is independent of framework version: it bumps
+      only when the contract TEXT changes (currently "1.0.0").
+
+    Determinism contract field outside this attestation: the contract also
+    covers structural fields on the TriageRecord itself (risk_tier,
+    recommended_disposition, regulatory_framework_tags, etc.). See
+    ``docs/determinism-attestation.md`` for the full per-field commitment
+    table.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    effective_temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    contract_honored: bool
+    provider: Optional[Provider] = None
+    effective_model_id: Optional[str] = Field(
+        default=None, min_length=1, max_length=128
+    )
+    fallback: Optional[FallbackRecord] = None
+    sampling_profile_hash: Optional[str] = Field(
+        default=None, pattern=_SAMPLING_PROFILE_HASH_PATTERN
+    )
+    system_prompt_hash: Optional[str] = Field(
+        default=None, pattern=_FULL_HASH_PATTERN
+    )
+    corpus_bundle_hash: Optional[str] = Field(
+        default=None, pattern=_FULL_HASH_PATTERN
+    )
+    contract_version: Optional[str] = Field(default=None, pattern=_SEMVER_PATTERN)
+    migrated_from: Optional[str] = Field(default=None, pattern=_SEMVER_PATTERN)
+
+
 class TriageRecord(BaseModel):
     """The complete vendor risk triage record the agent writes for each decision.
 
@@ -393,22 +510,59 @@ class TriageRecord(BaseModel):
             "for models not in the published price table."
         ),
     )
+    determinism_attestation: Optional[DeterminismAttestation] = Field(
+        default=None,
+        description=(
+            "Per-record attestation of the determinism contract, added "
+            "in output contract 1.4.0. Required on records declaring "
+            "output_schema_version 1.4.0 or later (enforced by a "
+            "model_validator). Absent on records declaring 1.0.0-1.3.0 "
+            "(which predate the contract). See "
+            "docs/determinism-attestation.md for the contract text and "
+            "the empirically-measured per-(provider, model) variance "
+            "band."
+        ),
+    )
 
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Serialize to dict, excluding unset optional fields by default.
 
-        The schema declares optional fields as ``type: "string"`` (not
+        The schema declares most optional fields as ``type: "string"`` (not
         ``["string", "null"]``); emitting them as JSON ``null`` violates the
         schema. ``exclude_none=True`` is the default so output always conforms.
         Callers wanting null-included output can pass ``exclude_none=False``.
+
+        Exception: ``determinism_attestation`` (added in 1.4.0) declares
+        every nested field in its ``required`` list with explicit
+        ``{"type": "null"}`` allowed in each anyOf. The audit contract is
+        "every attestation key is structurally present; null means
+        absent, not missing key." So when an attestation is emitted, all
+        of its keys are emitted regardless of the parent's
+        ``exclude_none`` setting.
         """
         kwargs.setdefault("exclude_none", True)
-        return super().model_dump(**kwargs)
+        data = super().model_dump(**kwargs)
+        if data.get("determinism_attestation") is not None and self.determinism_attestation is not None:
+            # Re-expand the attestation with every key present.
+            attestation_kwargs = dict(kwargs)
+            attestation_kwargs["exclude_none"] = False
+            data["determinism_attestation"] = self.determinism_attestation.model_dump(
+                **attestation_kwargs
+            )
+        return data
 
     def model_dump_json(self, **kwargs: Any) -> str:
-        """Serialize to JSON, excluding unset optional fields by default."""
+        """Serialize to JSON, excluding unset optional fields by default.
+
+        Routes through ``model_dump(mode="json")`` so the
+        ``determinism_attestation`` full-key expansion in ``model_dump``
+        is honored. Datetime fields are RFC 3339 strings via the
+        ``_serialize_rfc3339`` field serializer (invoked in JSON mode).
+        """
+        import json
         kwargs.setdefault("exclude_none", True)
-        return super().model_dump_json(**kwargs)
+        kwargs["mode"] = "json"
+        return json.dumps(self.model_dump(**kwargs))
 
     @field_validator("decision_timestamp", "revoked_at")
     @classmethod
@@ -544,5 +698,14 @@ class TriageRecord(BaseModel):
                 raise ValueError(
                     "tenant_id is required for records declaring "
                     "output_schema_version 1.3.0 or later"
+                )
+        # determinism_attestation is required as of output contract 1.4.0
+        # (records declaring 1.0.0-1.3.0 predate the determinism contract
+        # and may omit it; records declaring 1.4.0 or later must carry it).
+        if _version_tuple(self.output_schema_version) >= (1, 4, 0):
+            if self.determinism_attestation is None:
+                raise ValueError(
+                    "determinism_attestation is required for records "
+                    "declaring output_schema_version 1.4.0 or later"
                 )
         return self

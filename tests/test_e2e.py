@@ -134,7 +134,7 @@ def test_e2e_golden_pipeline_tenant_scoped() -> None:
     # Record is a real TriageRecord, attributed, at the current contract.
     assert isinstance(record, TriageRecord)
     assert record.tenant_id == "acme-bank"
-    assert record.output_schema_version == "1.3.0"
+    assert record.output_schema_version == "1.4.0"
 
     # It validates against the dispatch.
     ok, errors = validate_output(record.model_dump(mode="json"))
@@ -232,6 +232,26 @@ def test_e2e_judge_on_real_output() -> None:
 # -- Scenario 3: migration round-trip ------------------------------------
 
 
+def _synthesize_legacy_record(native_dict: dict, target_version: str) -> dict:
+    """Synthesize a pre-current-contract record from a fresh one.
+
+    Drops fields that postdate ``target_version`` so the result
+    validates as a record that would have been produced under
+    ``target_version`` at the time. Specifically:
+
+    - tenant_id (introduced at 1.3.0)
+    - determinism_attestation (introduced at 1.4.0)
+    """
+    legacy = dict(native_dict)
+    legacy["output_schema_version"] = target_version
+    # Strip fields that did not exist at target_version.
+    if target_version < "1.4.0":
+        legacy.pop("determinism_attestation", None)
+    if target_version < "1.3.0":
+        legacy.pop("tenant_id", None)
+    return legacy
+
+
 def test_e2e_migration_roundtrip_renders_like_native() -> None:
     """A migrated pre-tenancy record renders and validates like a native one."""
     from migration import migrate_record, fixed_tenant_resolver
@@ -242,13 +262,12 @@ def test_e2e_migration_roundtrip_renders_like_native() -> None:
     native_dict = native.model_dump(mode="json")
 
     # Synthesize a pre-tenancy (1.2.0) version of the same record: drop
-    # tenant_id and restamp the version, as a record produced before
-    # tenancy would look.
-    legacy = dict(native_dict)
-    legacy.pop("tenant_id", None)
-    legacy["output_schema_version"] = "1.2.0"
-    ok, _ = validate_output(legacy)
-    assert ok, "legacy 1.2.0 record should validate without tenant_id"
+    # post-1.2.0 fields and restamp the version, as a record produced
+    # before tenancy and determinism would look.
+    legacy = _synthesize_legacy_record(native_dict, "1.2.0")
+    legacy.pop("tenant_id", None)  # 1.2.0 had no tenant_id
+    ok, errors = validate_output(legacy)
+    assert ok, f"legacy 1.2.0 record should validate without tenant_id: {errors}"
 
     # Migrate it forward, assigning the same tenant.
     migrated = migrate_record(
@@ -273,9 +292,8 @@ def test_e2e_migration_preserves_decision_content() -> None:
     native = TriageAgent.for_tenant(_tenant()).triage(_submission())
     native_dict = native.model_dump(mode="json")
 
-    legacy = dict(native_dict)
+    legacy = _synthesize_legacy_record(native_dict, "1.2.0")
     legacy.pop("tenant_id", None)
-    legacy["output_schema_version"] = "1.2.0"
 
     migrated = migrate_record(
         legacy, "1.3.0", fixed_tenant_resolver("acme-bank")
@@ -367,9 +385,8 @@ def test_e2e_cli_chain_subprocess(tmp_path: Path) -> None:
     record_dict = record.model_dump(mode="json")
 
     # Write a pre-tenancy version to migrate, and the submission.
-    legacy = dict(record_dict)
+    legacy = _synthesize_legacy_record(record_dict, "1.2.0")
     legacy.pop("tenant_id", None)
-    legacy["output_schema_version"] = "1.2.0"
     legacy_path = tmp_path / "legacy.json"
     legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
 

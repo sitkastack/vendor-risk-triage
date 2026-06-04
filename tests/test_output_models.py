@@ -37,25 +37,37 @@ from agent.output_models import (
 
 
 REPO_ROOT = Path(__file__).parent.parent
+# Phase 1 schema (1.0.0) is preserved for backward-compatibility
+# assertions: the Pydantic model can still produce records that
+# validate against the original public contract, regardless of how
+# many version hops have been added since.
 SCHEMA_PATH = REPO_ROOT / "schemas" / "output-contract-1.0.0.schema.json"
+# Current schema is the one the framework writes today. Sourced from
+# OUTPUT_SCHEMA_VERSION so a contract bump auto-updates this path.
+from agent.agent import OUTPUT_SCHEMA_VERSION  # noqa: E402
+CURRENT_SCHEMA_PATH = (
+    REPO_ROOT / "schemas" / f"output-contract-{OUTPUT_SCHEMA_VERSION}.schema.json"
+)
 EXAMPLE_PATH = REPO_ROOT / "examples" / "triage-record.example.json"
 
 try:
     SCHEMA: dict[str, Any] = json.loads(SCHEMA_PATH.read_text())
+    CURRENT_SCHEMA: dict[str, Any] = json.loads(CURRENT_SCHEMA_PATH.read_text())
 except FileNotFoundError as exc:
     raise RuntimeError(
-        f"schemas/output-contract-1.0.0.schema.json not found at {SCHEMA_PATH}. "
+        f"output contract schema not found: {exc}. "
         "Run pytest from the repo root."
     ) from exc
 except json.JSONDecodeError as exc:
     raise RuntimeError(
-        f"schemas/output-contract-1.0.0.schema.json is not valid JSON: {exc}. "
+        f"output contract schema is not valid JSON: {exc}. "
         "Fix the schema file before running tests."
     ) from exc
 
-# Build the validator once. ``jsonschema.validate`` rebuilds it on every call;
+# Build the validators once. ``jsonschema.validate`` rebuilds it on every call;
 # pre-compiling speeds the test suite materially.
 VALIDATOR = Draft202012Validator(SCHEMA)
+CURRENT_VALIDATOR = Draft202012Validator(CURRENT_SCHEMA)
 
 
 def _deep_merge(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
@@ -800,9 +812,14 @@ def test_pydantic_output_validates_against_schema(tier: str) -> None:
 
 
 def test_canonical_example_validates_against_schema() -> None:
-    """The example file validates (regression on the existing test_examples_validate)."""
+    """The example file validates against the CURRENT contract.
+
+    The example record is bumped alongside the framework's
+    OUTPUT_SCHEMA_VERSION so adopters reading the canonical example
+    see the contract the framework actually writes today.
+    """
     example = json.loads(EXAMPLE_PATH.read_text())
-    VALIDATOR.validate(example)
+    CURRENT_VALIDATOR.validate(example)
 
 
 def test_schema_is_valid_jsonschema_2020_12() -> None:
@@ -946,5 +963,6 @@ def test_round_trip_example_file() -> None:
     example = json.loads(EXAMPLE_PATH.read_text())
     record = TriageRecord.model_validate(example)
     payload = record.model_dump(mode="json")
-    # Re-validate the serialized payload against the schema.
-    VALIDATOR.validate(payload)
+    # Re-validate the serialized payload against the CURRENT schema
+    # (the example is bumped to track OUTPUT_SCHEMA_VERSION).
+    CURRENT_VALIDATOR.validate(payload)

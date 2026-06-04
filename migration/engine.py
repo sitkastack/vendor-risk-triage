@@ -62,6 +62,40 @@ KNOWN_VERSIONS: tuple[str, ...] = tuple(
 
 # The version at which tenant_id became required.
 _TENANCY_VERSION: tuple[int, int, int] = (1, 3, 0)
+# The version at which determinism_attestation became required.
+_DETERMINISM_VERSION: tuple[int, int, int] = (1, 4, 0)
+
+
+def _migrated_attestation(source_version: str) -> dict:
+    """Build the determinism attestation for a record migrated from a
+    pre-1.0.5 contract.
+
+    Records produced under contracts 1.0.0-1.3.0 predate the determinism
+    contract entirely. They cannot be retroactively attested: no
+    measurement of the producing agent's temperature, system prompt,
+    corpus bundle, or fallback path exists. The migrated record's
+    attestation faithfully records this: ``migrated_from`` carries the
+    discriminator value, ``contract_honored`` is ``False``, every other
+    field is ``null``, and ``contract_version`` is ``None`` (no contract
+    was in force at production time).
+
+    Operators distinguish "migrated, contract not in force" from "fresh,
+    contract violation at production" by inspecting ``migrated_from``:
+    when set, the violation predates the contract and cannot be
+    reattested.
+    """
+    return {
+        "effective_temperature": None,
+        "contract_honored": False,
+        "provider": None,
+        "effective_model_id": None,
+        "fallback": None,
+        "sampling_profile_hash": None,
+        "system_prompt_hash": None,
+        "corpus_bundle_hash": None,
+        "contract_version": None,
+        "migrated_from": source_version,
+    }
 
 
 # A tenant resolver maps a record (the pre-migration dict) to a
@@ -160,9 +194,9 @@ def migrate_record(
     migrated = dict(record)
     decision_id = str(migrated.get("decision_id", "<unknown>"))
 
-    # The only structural change in the whole chain is the tenancy hop.
-    # If migration crosses from below 1.3.0 to 1.3.0-or-above and the
-    # record has no tenant_id, source one.
+    # First structural hop: tenancy. If migration crosses from below
+    # 1.3.0 to 1.3.0-or-above and the record has no tenant_id, source
+    # one.
     crosses_tenancy = (
         source_tuple < _TENANCY_VERSION <= target_tuple
     )
@@ -178,7 +212,23 @@ def migrate_record(
         resolved = tenant_resolver(migrated)
         migrated["tenant_id"] = _validate_tenant_id(resolved, decision_id)
 
-    # All hops (additive and tenancy) finish with a version restamp.
+    # Second structural hop: determinism contract. If migration crosses
+    # from below 1.4.0 to 1.4.0-or-above and the record has no
+    # determinism_attestation, stamp the "migrated_from" attestation:
+    # contract_honored=False, every data field null, migrated_from set
+    # to the source version. Records produced under contracts
+    # 1.0.0-1.3.0 predate the contract; they cannot be retroactively
+    # attested.
+    crosses_determinism = (
+        source_tuple < _DETERMINISM_VERSION <= target_tuple
+    )
+    if crosses_determinism and migrated.get("determinism_attestation") is None:
+        migrated["determinism_attestation"] = _migrated_attestation(
+            source_version
+        )
+
+    # All hops (additive, tenancy, determinism) finish with a version
+    # restamp.
     migrated["output_schema_version"] = target_version
 
     _validate_or_raise(migrated, target_version)

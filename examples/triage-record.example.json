@@ -3,7 +3,7 @@
   "decision_timestamp": "2026-05-22T14:45:12Z",
   "input_submission_id": "s-northwind-2026-05-22-001",
   "input_schema_version": "1.0.0",
-  "agent_version": "vrt-agent-v0.1.0-abc123def",
+  "agent_version": "vrt-agent-v1.0.5-anthropic-claude-sonnet-4-5-prompt-abc123def456",
   "risk_tier": "tier_2_moderate",
   "recommended_disposition": "conditional_approve",
   "classification_rationale": "Vendor uses AI in operational decisions (ticket routing) that affect internal workflows but not customer outcomes directly. Disclosed PII handling indicates contact data flows through the classifier with no retention beyond the routing decision. Vendor self-classifies as limited risk under the EU AI Act, consistent with the operational-decision scope.",
@@ -25,7 +25,8 @@
     "score": 0.82,
     "interpretation": "high"
   },
-  "output_schema_version": "1.2.0",
+  "output_schema_version": "1.4.0",
+  "tenant_id": "acme-bank",
   "required_mitigations": [
     "Verify vendor's PII non-retention claim through security validation function before contract renewal.",
     "Quarterly review of disclosed AI features for scope creep, particularly any movement toward customer_facing or regulated_decisions levels."
@@ -34,5 +35,17 @@
   "regulatory_framework_tags": [
     "EU_AI_Act_Annex_III",
     "OSFI_E_23"
-  ]
+  ],
+  "determinism_attestation": {
+    "effective_temperature": 0.0,
+    "contract_honored": true,
+    "provider": "anthropic",
+    "effective_model_id": "anthropic:claude-sonnet-4-5",
+    "fallback": null,
+    "sampling_profile_hash": "9a1b3f7c2e4d",
+    "system_prompt_hash": "f8a4d3c2b1e0987654321fedcba9876543210abcdef0123456789abcdef01234",
+    "corpus_bundle_hash": "1234567890abcdef234567890abcdef34567890abcdef4567890abcdef567890",
+    "contract_version": "1.0.0",
+    "migrated_from": null
+  }
 }

@@ -68,6 +68,7 @@ _OUTPUT_SCHEMA_FILES: dict[str, str] = {
     "1.1.0": "output-contract-1.1.0.schema.json",
     "1.2.0": "output-contract-1.2.0.schema.json",
     "1.3.0": "output-contract-1.3.0.schema.json",
+    "1.4.0": "output-contract-1.4.0.schema.json",
 }
 """Mapping from output_schema_version to the schema file that validates it.
 

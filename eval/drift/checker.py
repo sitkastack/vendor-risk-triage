@@ -50,6 +50,14 @@ baseline; the diff is reviewable.
   classification signal)
 - ``cost_estimate`` (per-run token usage and dollar figure; varies
   with prompt length and is not a classification signal)
+- ``determinism_attestation`` data fields (effective_temperature,
+  provider, effective_model_id, fallback, sampling_profile_hash,
+  system_prompt_hash, corpus_bundle_hash, contract_version,
+  migrated_from) — per-deployment configuration noise. The single
+  field surfaced as drift is ``contract_honored``; a baseline
+  that ran with ``contract_honored=True`` and a current run that
+  produced ``False`` is reported as SOFT drift so an operator
+  notices the contract exited.
 
 The check does not exercise a real LLM. It uses the test-double
 FunctionModel pattern from tests/test_demo_scenarios.py, with the
@@ -415,6 +423,31 @@ def compare_records(
                 message=(
                     "Required mitigations text differs. Count or "
                     "content changed."
+                ),
+            ))
+
+    # Soft drift: determinism_attestation.contract_honored
+    # Only this single field is diffed (the rest of the attestation is
+    # per-deployment instance noise). A False-to-True or True-to-False
+    # flip means the deployment's contract posture changed; operators
+    # need to notice this even if the classification stayed the same.
+    baseline_attestation = getattr(baseline, "determinism_attestation", None)
+    current_attestation = getattr(current, "determinism_attestation", None)
+    if baseline_attestation is not None and current_attestation is not None:
+        baseline_honored = baseline_attestation.contract_honored
+        current_honored = current_attestation.contract_honored
+        if baseline_honored != current_honored:
+            entries.append(DriftEntry(
+                category=DriftCategory.SOFT,
+                field_path="determinism_attestation.contract_honored",
+                baseline_value=baseline_honored,
+                current_value=current_honored,
+                message=(
+                    "Determinism contract_honored flipped. The "
+                    "deployment's contract posture changed between "
+                    "baseline and current. Review the attestation's "
+                    "fallback / temperature / system_prompt_hash to "
+                    "identify which exit condition triggered."
                 ),
             ))
 

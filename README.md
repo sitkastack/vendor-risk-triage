@@ -25,9 +25,9 @@ It is part of the [sitkastack Framework](https://sitkastack.com), a public body 
 | Phase 6: Production Polish | live |
 | Phase 7: Multi-tenancy + Schema Migration | live |
 
-Current framework version: `1.0.1` (first stable release; published as `v1.0.1` on GitHub Releases). Test suite: 1,331 tests, 100% coverage across twelve Python packages. The full submission-to-audit-pack pipeline is verified end to end (`tests/test_e2e.py`) and validated against authoritative regulation PDFs (OSFI E-23 (2027) and EU AI Act Regulation 2024/1689) via the integration suite. See `docs/end-to-end-example.md` for a narrated walkthrough and `scripts/harvest_corpus_artifacts.py` for the real-corpus demo harness.
+Current framework version: `1.0.5` (published as `v1.0.5` on GitHub Releases). Test suite: 1,377 tests, 100% coverage across twelve Python packages. The full submission-to-audit-pack pipeline is verified end to end (`tests/test_e2e.py`) and validated against authoritative regulation PDFs (OSFI E-23 (2027) and EU AI Act Regulation 2024/1689) via the integration suite. See `docs/end-to-end-example.md` for a narrated walkthrough and `scripts/harvest_corpus_artifacts.py` for the real-corpus demo harness.
 
-Output schema is frozen at `1.3.0`. CLI surface (`vrt {triage, render, migrate, drift, corpus, version}`) and `SYSTEM_PROMPT_HASH` (`69ef583c6dbe`) are stable. Breaking changes from this release forward ride in major version bumps; `vrt migrate` backfills records across schema versions.
+Output schema is at `1.4.0` as of v1.0.5 (additive over `1.3.0`: every record carries a `determinism_attestation` declaring the producing configuration's contract posture; see `docs/determinism-attestation.md`). CLI surface (`vrt {triage, render, migrate, drift, corpus, version}`) and `SYSTEM_PROMPT_HASH` (`69ef583c6dbe`) are stable. Breaking changes from `1.0.0` forward ride in major version bumps; `vrt migrate` backfills records across schema versions including the 1.3.0-to-1.4.0 hop.
 
 ## What's in this repository
 

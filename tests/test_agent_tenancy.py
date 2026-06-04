@@ -104,19 +104,28 @@ def test_agent_with_tenant_does_not_warn(caplog) -> None:
     )
 
 
-def test_agent_records_declare_1_3_0() -> None:
-    """The agent now emits records declaring output contract 1.3.0."""
+def test_agent_records_declare_current_contract() -> None:
+    """The agent emits records declaring the current output contract.
+
+    Asserts the agent's declared version equals the framework's
+    OUTPUT_SCHEMA_VERSION constant rather than hardcoding a literal,
+    so the assertion stays correct across contract bumps. The
+    framework's responsibility is "declare the current version on
+    every record"; the value of that version is a separate concern
+    tracked by the schema file collection.
+    """
+    from agent.agent import OUTPUT_SCHEMA_VERSION
     agent = TriageAgent(TriageAgentConfig(model=_model()))
     record = agent.triage(_submission())
-    assert record.output_schema_version == "1.3.0"
+    assert record.output_schema_version == OUTPUT_SCHEMA_VERSION
 
 
-def test_agent_output_validates_against_1_3_0_dispatch() -> None:
+def test_agent_output_validates_against_dispatch() -> None:
     """The agent's output validates via the framework's schema dispatch."""
     agent = TriageAgent(TriageAgentConfig(model=_model()))
     record = agent.triage(_submission())
     ok, errors = validate_output(record.model_dump(mode="json"))
-    assert ok, f"agent output failed 1.3.0 validation: {errors}"
+    assert ok, f"agent output failed dispatch validation: {errors}"
 
 
 # -- for_tenant constructor ----------------------------------------------

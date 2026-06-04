@@ -78,3 +78,12 @@ Thumbs.db
 *.local
 .env.*
 !.env.example
+
+# Local-only corpus bundles (osfi-e23 is local-only by Crown copyright;
+# upstream serves byte-different content per fetch so pins fail by
+# design). Committed corpora are listed explicitly.
+corpora/osfi-e23/
+
+# Harvested demo artifacts (regenerated from harvest_corpus_artifacts.py;
+# not checked in to keep the repo lean).
+corpus-artifacts/

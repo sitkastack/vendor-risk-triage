@@ -327,6 +327,12 @@ def _record_canonical_bytes(record: TriageRecord) -> bytes:
       null" treatment of optional fields)
     - UTF-8 encoding
     - Datetimes as ISO 8601 strings (Pydantic's mode="json" default)
+    - ``determinism_attestation`` (added in 1.4.0) ALWAYS emits every
+      nested field, including nulls. The 1.4.0 schema requires every
+      attestation key structurally; TriageRecord.model_dump expands
+      the attestation regardless of the parent's ``exclude_none``.
+      Two callers hashing the same record agree on the attestation
+      bytes whether or not its nullable fields were populated.
 
     Two callers computing the hash of the same record must agree
     on these rules or the hash will differ. The rules are stable
