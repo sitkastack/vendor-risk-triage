@@ -1,19 +1,33 @@
 # System architecture (v1.0.5)
 
-The Vendor Risk Triage framework ships twelve Python packages plus a
-schemas directory and a CLI. The framework is stateless: callers supply
-inputs, the framework returns outputs. No HTTP, no database, no
-scheduled jobs; those concerns belong to the deployment architecture
-(see `docs/phase-2/01-system-architecture.md` for the institutional
-shape).
+The Vendor Risk Triage framework ships eleven runtime Python packages
+(`agent`, `cli`, `eval`, `ingestion`, `migration`, `observability`,
+`pricing`, `reporting`, `resilience`, `retrieval`, `tenancy`) plus a
+`schemas/` directory of JSON Schema contract files, a `scripts/`
+directory of maintenance and CI helpers, and a `detection/` Phase 5
+skeleton not yet operational at v1.0.5. The framework is state-free at
+the contract boundary: callers supply inputs, the framework returns
+outputs. No HTTP, no database, no scheduled jobs; those concerns belong
+to the deployment architecture (see
+`docs/phase-2/01-system-architecture.md` for the institutional shape).
+
+The framework is NOT process-stateless in the strict sense: the
+default `resilience.InMemoryBreakerStateStore` carries cross-call
+failure history inside each TriageAgent instance for circuit-breaker
+decisions, and that state is lost on process restart. Deployments
+wanting shared breaker state across workers inject a custom
+`BreakerStateStore` (e.g. Redis or Postgres-backed) per
+`resilience/circuit_breaker.py`. The Composition section below
+enumerates breaker state as a concern the deployment can choose to
+externalize.
 
 This document is the visual anchor for the current (v1.0.5) framework
 at the package level. The Phase 2 architecture diagram covers the
-foundational design; this one covers how the framework's twelve
+foundational design; this one covers how the framework's runtime
 packages compose AND how the determinism contract (introduced 1.0.5,
 output contract 1.4.0) flows through them.
 
-## Twelve packages
+## Package decomposition
 
 ```mermaid
 flowchart TB
@@ -23,27 +37,29 @@ flowchart TB
     classDef ops fill:#fee2e2,stroke:#b91c1c,stroke-width:1px
     classDef eval fill:#f3e8ff,stroke:#7c3aed,stroke-width:1px
     classDef tool fill:#e0e7ff,stroke:#4338ca,stroke-width:1px
+    classDef skeleton fill:#f5f5f5,stroke:#9ca3af,stroke-dasharray:5 5
 
     Caller([Institutional caller<br/>HTTP handler, batch job, CLI])
+    TenancyConfig([TenantConfig<br/>caller-supplied per-tenant routing])
 
     CLI[cli/<br/>vrt triage render migrate drift corpus version]:::tool
+    Scripts[scripts/<br/>build_corpus_bundles, check_drift,<br/>check_system_prompt_hash,<br/>measure_determinism_variance, prepare_release]:::tool
 
     subgraph Core[Core: agent + contract]
         Agent[agent/<br/>TriageAgent, SYSTEM_PROMPT,<br/>DeterminismAttestation builder]:::agent
         OutputModels[agent.output_models<br/>TriageRecord Pydantic<br/>DeterminismAttestation FallbackRecord]:::agent
         Schemas[schemas/<br/>output-contract-1.0.0 through 1.4.0<br/>JSON Schema 2020-12]:::contract
-        Detection[detection/<br/>signature rules for review triggers]:::contract
     end
 
     subgraph IO[I/O packages]
-        Ingestion[ingestion/<br/>PDF parsing, content_hash verify]:::io
-        Retrieval[retrieval/<br/>BM25, Vector, Hybrid, corpus registry]:::io
+        Ingestion[ingestion/<br/>PDF parsing, Document type]:::io
+        Retrieval[retrieval/<br/>BM25, Vector, Hybrid, Chunk type,<br/>corpus registry]:::io
         Tenancy[tenancy/<br/>TenantConfig, TenantRegistry,<br/>per-tenant model routing]:::io
     end
 
     subgraph Ops[Operational packages]
         Pricing[pricing/<br/>token to dollar price table]:::ops
-        Resilience[resilience/<br/>CircuitBreaker, fallback policy]:::ops
+        Resilience[resilience/<br/>CircuitBreaker, fallback policy,<br/>InMemoryBreakerStateStore default]:::ops
         Observability[observability/<br/>events, metrics, spans, attestation]:::ops
         Reporting[reporting/<br/>audit pack HTML, audit log envelope]:::ops
         Migration[migration/<br/>1.0.0 to 1.4.0 version hops]:::ops
@@ -56,22 +72,29 @@ flowchart TB
         EvalCalibration[eval/calibration<br/>Brier ECE MCE]:::eval
     end
 
+    subgraph Skeletons[Phase 5 skeletons not active at v1.0.5]
+        Detection[detection/<br/>signature rules for review triggers<br/>not installed; raises NotImplementedError]:::skeleton
+    end
+
     Caller --> CLI
     Caller --> Agent
+    TenancyConfig -.->|injected via TriageAgentConfig.tenant| Agent
 
     CLI --> Agent
     CLI --> Migration
     CLI --> Reporting
     CLI --> EvalRunner
     CLI --> Retrieval
+    Scripts -.->|maintenance + CI gates| CLI
 
     Agent --> OutputModels
     Agent --> Pricing
     Agent --> Resilience
     Agent --> Observability
-    Agent --> Tenancy
-    Agent --> Ingestion
-    Agent --> Retrieval
+    Caller -.->|caller pre-parses| Ingestion
+    Caller -.->|caller pre-retrieves chunks| Retrieval
+    Agent -.->|imports Document type| Ingestion
+    Agent -.->|imports Chunk type| Retrieval
     OutputModels -.->|conforms to| Schemas
     Migration -.->|validates against| Schemas
     Reporting --> OutputModels
@@ -88,9 +111,6 @@ sequenceDiagram
     autonumber
     participant Caller
     participant Agent as TriageAgent
-    participant Tenancy
-    participant Ingestion
-    participant Retrieval
     participant LLM as PydanticAI Model
     participant Resilience as CircuitBreaker
     participant AttBuilder as Attestation builder
@@ -98,29 +118,36 @@ sequenceDiagram
     participant Pricing
     participant Record as TriageRecord
 
+    Note over Caller: caller pre-parses PDFs via ingestion.PDFReader and retrieves chunks via retrieval.Retriever before invoking triage
     Caller->>Agent: triage submission, documents, chunks
-    Agent->>Tenancy: resolve tenant_id and model routing
-    Agent->>Ingestion: verify document content_hash vs submission
-    Ingestion-->>Agent: Documents or TriageInputError
-    Agent->>Retrieval: caller-provided chunks pass through
+    Note over Agent: tenant_id and routing cached from TriageAgentConfig.tenant at construction. Stamped on every record.
+    Note over Agent: in-process _verify_documents_against_submission checks content_hash matches submission claim
     Note over Agent: temperature pinned at 0.0 in model_settings
-    Agent->>LLM: run_sync with BEGIN/END delimited prompt
-    alt primary succeeds
-        LLM-->>Agent: classification
-        Agent->>Resilience: record_success
-    else primary fails or circuit open
-        Agent->>Agent: fallback path, track reason
-        Agent->>LLM: run_sync against fallback model
-        LLM-->>Agent: classification
-        Agent->>Resilience: record_failure on primary
+    loop over N candidates primary first then ordered fallbacks
+        Agent->>Resilience: should_attempt for this model
+        alt breaker open
+            Resilience-->>Agent: skip and record reason circuit_open
+        else breaker closed
+            Agent->>LLM: run_sync with BEGIN/END delimited prompt
+            alt success
+                LLM-->>Agent: classification
+                Agent->>Resilience: record_success and break loop
+            else error
+                LLM-->>Agent: exception
+                Agent->>Resilience: record_failure and continue loop with next candidate
+                Note over Agent: first non-primary success records FallbackRecord with reason in transient_retry hard_refusal circuit_open operator_pinned or cross_provider
+            end
+        end
     end
     Agent->>Pricing: compute cost from token usage
     Pricing-->>Agent: CostEstimate or None
-    Agent->>AttBuilder: build attestation with chunks, fallback_info
+    Agent->>Obs: emit llm.call.cost_recorded
+    Agent->>AttBuilder: build attestation with chunks and fallback_info
     AttBuilder-->>Agent: DeterminismAttestation
-    Note over AttBuilder: contract_honored true iff temperature zero AND default prompt AND known provider AND no fallback
-    Agent->>Record: construct TriageRecord with attestation
-    Agent->>Obs: emit triage.completed with contract posture
+    Note over AttBuilder: contract_honored true iff temperature zero AND default prompt AND known provider AND no fallback fired. Corpus integrity anchored separately by corpus_bundle_hash field.
+    Agent->>Obs: emit validation.started
+    Agent->>Record: construct TriageRecord with attestation and cost
+    Agent->>Obs: emit validation.completed then triage.completed with contract posture
     Agent-->>Caller: TriageRecord
 ```
 
@@ -153,13 +180,13 @@ flowchart TB
     Refuse[TriageAgentError<br/>no agent, no record]:::fail
     LegacyWarn[DeprecationWarning<br/>contract_honored false]:::fail
 
-    Call[triage call]:::gate
-    FallbackCheck{fallback fired?}:::gate
+    Call[triage call: iterate N candidates]:::gate
+    FallbackCheck{fallback fired?<br/>reason in transient_retry,<br/>hard_refusal, circuit_open,<br/>operator_pinned, cross_provider}:::gate
 
     AttBuild[Build DeterminismAttestation]:::gate
     HonorCheck{all conditions met?}:::gate
     Honored[contract_honored true<br/>fresh attestation]:::pass
-    Exited[contract_honored false<br/>exit condition identifiable]:::fail
+    Exited[contract_honored false<br/>exit condition identifiable<br/>FallbackRecord populated if fallback fired]:::fail
 
     Record[TriageRecord with<br/>determinism_attestation]:::pass
 
@@ -177,16 +204,24 @@ flowchart TB
 
     Chunks --> CorpusHash
     Call --> FallbackCheck
-    FallbackCheck -->|no| AttBuild
-    FallbackCheck -->|yes| AttBuild
+    FallbackCheck -->|no fallback fired| AttBuild
+    FallbackCheck -->|fallback fired| AttBuild
     CorpusHash --> AttBuild
 
     AttBuild --> HonorCheck
-    HonorCheck -->|"temperature_zero AND default_prompt<br/>AND known_provider AND no_fallback"| Honored
+    HonorCheck -->|"temperature_zero AND default_prompt<br/>AND known_provider AND no_fallback_fired"| Honored
     HonorCheck -->|"any false"| Exited
     Honored --> Record
     Exited --> Record
 ```
+
+Note: `corpus_bundle_hash` is recorded on every attestation as an
+audit anchor, but the contract_honored boolean does NOT include a
+bundle-equality check against a deployment-specified expected hash.
+Operators wanting end-to-end corpus pinning compare
+`corpus_bundle_hash` against their own committed expected value
+out-of-band. See `docs/determinism-attestation.md` for the contract
+text.
 
 ## Migration paths
 
@@ -204,12 +239,12 @@ flowchart LR
 
     V100 -->|restamp version<br/>no field added| V110
     V110 -->|restamp version<br/>no field added| V120
-    V120 -->|tenant_resolver REQUIRED<br/>adds tenant_id| V130
+    V120 -->|tenant_resolver REQUIRED if no tenant_id present<br/>adds tenant_id| V130
     V130 -->|stamps migrated_from attestation<br/>contract_honored false, data null| V140
 
-    V100 -.->|"vrt migrate --to 1.4.0<br/>with tenant_resolver"| V140
-    V110 -.->|"vrt migrate --to 1.4.0<br/>with tenant_resolver"| V140
-    V120 -.->|"vrt migrate --to 1.4.0<br/>with tenant_resolver"| V140
+    V100 -.->|"vrt migrate --to 1.4.0<br/>tenant_resolver if no tenant_id"| V140
+    V110 -.->|"vrt migrate --to 1.4.0<br/>tenant_resolver if no tenant_id"| V140
+    V120 -.->|"vrt migrate --to 1.4.0<br/>tenant_resolver if no tenant_id"| V140
     V130 -.->|"vrt migrate --to 1.4.0"| V140
 ```
 
@@ -241,10 +276,10 @@ flowchart TB
     DRI -->|current vs baseline| EvalDrift[eval/drift<br/>checker, contract_honored signal]:::package
     DRI -.->|DriftReport| User
 
-    COR -->|build, list, hash| RetrievalCorpora[retrieval/corpora<br/>CORPUS_REGISTRY]:::package
+    COR -->|build, list| RetrievalCorpora[retrieval/corpora<br/>CORPUS_REGISTRY]:::package
     COR -.->|bundle path or list| User
 
-    VER -.->|FRAMEWORK_VERSION,<br/>SYSTEM_PROMPT_HASH,<br/>OUTPUT_SCHEMA_VERSION| User
+    VER -.->|FRAMEWORK_VERSION,<br/>SYSTEM_PROMPT_HASH,<br/>pyproject_sync| User
 ```
 
 ## CI gates
@@ -290,10 +325,10 @@ flowchart TB
     Triage[triage call] --> Started[triage.started]:::event
     Started --> CallStart[llm.call.started]:::event
     CallStart --> CallComplete[llm.call.completed<br/>or llm.call.fallback_triggered]:::event
-    CallComplete --> Validation[validation.started]:::event
-    Validation --> ValidationDone[validation.completed]:::event
-    ValidationDone --> CostRecorded[llm.call.cost_recorded]:::event
-    CostRecorded --> Completed[triage.completed]:::event
+    CallComplete --> CostRecorded[llm.call.cost_recorded<br/>token usage resolved to dollars]:::event
+    CostRecorded --> Validation[validation.started]:::event
+    Validation --> ValidationDone[validation.completed<br/>TriageRecord constructed with attestation and cost]:::event
+    ValidationDone --> Completed[triage.completed]:::event
 
     Completed --> Attrs[Attributes carried:<br/>decision_id<br/>tier disposition<br/>confidence_score<br/>contract_honored<br/>effective_temperature<br/>effective_model_id<br/>fallback_fired]:::attr
 
@@ -302,12 +337,12 @@ flowchart TB
 
 ## Composition with the deployment architecture
 
-The framework's twelve packages compose into the deployment shape
-specified in `docs/phase-2/01-system-architecture.md`. The
+The framework's eleven runtime packages compose into the deployment
+shape specified in `docs/phase-2/01-system-architecture.md`. The
 relationship:
 
-- The **framework's stateless library** (this repo) handles
-  classification, validation, retrieval, cost accounting, fallback,
+- The **framework library** (this repo) handles classification,
+  validation, retrieval type plumbing, cost accounting, fallback,
   observability event emission, audit pack rendering, audit log
   envelope construction, and migration.
 - The **deployment architecture** (institutional shape) handles HTTP
@@ -316,8 +351,26 @@ relationship:
 
 Per ADR-008, the framework intentionally carries no HTTP, no database,
 no scheduled jobs. A deploying institution wires the framework into
-the deployment architecture; the framework's stateless interface
-makes the composition explicit.
+the deployment architecture.
+
+Statefulness the deployment must consider:
+
+- **Circuit-breaker state.** The default `InMemoryBreakerStateStore`
+  in `resilience/` carries per-model failure history inside each
+  TriageAgent instance lifetime. On process restart, the breaker
+  forgets which providers were unhealthy and retries them
+  immediately. Deployments running long-lived workers benefit from
+  injecting a shared store (Redis, Postgres) so breaker decisions
+  span workers and survive restarts.
+- **Caller-side parsing and retrieval state.** The agent does NOT
+  parse PDFs or run retrieval itself. Callers exercise
+  `ingestion.PDFReader` and `retrieval.Retriever` upstream and pass
+  pre-built `Document` and `Chunk` instances. Caching, document
+  storage, and corpus warm-up belong to the caller's deployment.
+- **Tenancy.** A `TenantConfig` is bound to a single TriageAgent
+  instance at construction. A multi-tenant deployment instantiates
+  one agent per tenant (or pools agents per tenant); the framework
+  does not multiplex tenants on one agent instance.
 
 ## Cross-references
 

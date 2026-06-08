@@ -136,12 +136,15 @@ classDiagram
     FallbackRecord ..> FallbackReason : reason
 ```
 
-## Field requirements by contract version
+## Newly REQUIRED fields by contract version
 
 The output contract evolved 1.0.0 -> 1.1.0 -> 1.2.0 -> 1.3.0 -> 1.4.0.
 Earlier records remain valid against their version-of-record schema via
-the dispatcher in `schemas/validate.py`. The diagram below shows when
-each field became required.
+the dispatcher in `schemas/validate.py`. The diagram below shows only
+the fields that became NEWLY REQUIRED at each version hop. The full
+field inventory at 1.0.0 baseline is broader; see the class diagram
+above and the per-field specification at
+`docs/phase-1/03-output-contract.md` for the complete list.
 
 ```mermaid
 flowchart TB
@@ -155,29 +158,38 @@ flowchart TB
     V130[output-contract 1.3.0<br/>+ tenant_id REQUIRED]:::breaking
     V140[output-contract 1.4.0<br/>+ determinism_attestation REQUIRED]:::contract
 
-    F_core[decision_id<br/>decision_timestamp<br/>input_submission_id<br/>input_schema_version<br/>agent_version<br/>risk_tier<br/>recommended_disposition<br/>classification_rationale<br/>evidence_cited<br/>confidence_signal<br/>output_schema_version]:::field
-    F_correlation[correlation_id<br/>optional]:::field
-    F_cost[cost_estimate<br/>optional]:::field
-    F_tenant[tenant_id<br/>required slug or sentinel]:::breaking
-    F_attest[determinism_attestation<br/>required structure<br/>fields nullable]:::field
+    F_core_req[REQUIRED in 1.0.0<br/>decision_id<br/>decision_timestamp<br/>input_submission_id<br/>input_schema_version<br/>agent_version<br/>risk_tier<br/>recommended_disposition<br/>classification_rationale<br/>evidence_cited<br/>confidence_signal<br/>output_schema_version]:::field
+    F_core_opt[OPTIONAL in 1.0.0<br/>required_mitigations<br/>accountable_owner<br/>supersedes<br/>revoked_at + revocation_reason pair<br/>review_interval_days<br/>regulatory_framework_tags<br/>extension_schema_version]:::field
+    F_correlation[correlation_id<br/>added 1.1.0, optional]:::field
+    F_cost[cost_estimate<br/>added 1.2.0, optional]:::field
+    F_tenant[tenant_id<br/>added 1.3.0, REQUIRED<br/>slug or sentinel]:::breaking
+    F_attest[determinism_attestation<br/>added 1.4.0, REQUIRED<br/>all nested keys present, nulls allowed]:::field
 
     V100 --> V110
     V110 --> V120
     V120 --> V130
     V130 --> V140
 
-    V100 -.->|carries| F_core
+    V100 -.->|carries| F_core_req
+    V100 -.->|carries| F_core_opt
     V110 -.->|adds| F_correlation
     V120 -.->|adds| F_cost
     V130 -.->|requires| F_tenant
     V140 -.->|requires| F_attest
 ```
 
-## Three populations of records
+## Four populations of records
 
-After 1.0.5 ships, three populations of records coexist. Operators
-distinguish them by inspecting `(output_schema_version, migrated_from,
-contract_honored)` and route on the resulting four-bin discriminator.
+After 1.0.5 ships, four populations of records coexist (the three
+populations in the contract docstring decompose to four for operator
+dispatch: fresh records split into contract-honored and
+contract-exited). Operators distinguish them by inspecting
+`(output_schema_version, migrated_from, contract_honored)` and route on
+the resulting four-bin discriminator. The dispatch order is:
+
+1. Check `output_schema_version` first: pre-1.4.0 records have no attestation.
+2. Then check `migrated_from` truthiness: any non-null value identifies a migrated record (sourced from 1.0.0, 1.1.0, 1.2.0, or 1.3.0).
+3. Then check `contract_honored`: separates fresh records into honored vs exited.
 
 ```mermaid
 flowchart LR
@@ -188,7 +200,7 @@ flowchart LR
 
     PRE[Pre-1.0.5 records<br/>output_schema_version 1.0.0 - 1.3.0<br/>determinism_attestation absent<br/>cannot be retroactively attested]:::pre
 
-    MIG[Migrated-forward records<br/>output_schema_version 1.4.0<br/>migrated_from 1.3.0<br/>contract_honored false<br/>data fields null]:::migrated
+    MIG[Migrated-forward records<br/>output_schema_version 1.4.0<br/>migrated_from in 1.0.0, 1.1.0, 1.2.0, 1.3.0<br/>contract_honored false<br/>data fields null]:::migrated
 
     FRESH_OK[Fresh contract-honored<br/>output_schema_version 1.4.0<br/>migrated_from null<br/>contract_honored true<br/>full attestation populated]:::fresh_honored
 
@@ -202,9 +214,9 @@ flowchart LR
     FRESH_OUT --> OP
 
     OP -->|"version less than 1.4.0"| BIN1[pre_contract bin]
-    OP -->|"migrated_from set"| BIN2[migrated bin]
-    OP -->|"honored true"| BIN3[contract_honored bin]
-    OP -->|"honored false, migrated_from null"| BIN4[contract_exited bin]
+    OP -->|"migrated_from not null"| BIN2[migrated bin]
+    OP -->|"migrated_from null AND honored true"| BIN3[contract_honored bin]
+    OP -->|"migrated_from null AND honored false"| BIN4[contract_exited bin]
 ```
 
 ## Schema dispatch

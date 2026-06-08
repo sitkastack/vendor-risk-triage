@@ -252,7 +252,7 @@
               ]
             },
             "contract_honored": {
-              "description": "True iff: effective_temperature was 0, no fallback fired, system_prompt was the framework default, corpus_bundle_hash matches the bundle actually loaded for this triage, and the model accepted the temperature setting. False for migrated records and any deployment configuration that exited the contract.",
+              "description": "True iff: effective_temperature was 0, no fallback fired, system_prompt was the framework default, provider is in the known-attested set (anthropic, openai, google-gla, google-vertex), and the model accepted the temperature setting. Corpus integrity is anchored separately by the corpus_bundle_hash field itself, not by this boolean: contract_honored does NOT assert that the loaded bundle matches a deployment-specified expected hash. Operators wanting end-to-end corpus-pinning compare corpus_bundle_hash against their own committed expected value. False for migrated records and any deployment configuration that exited the contract.",
               "type": "boolean"
             },
             "provider": {
