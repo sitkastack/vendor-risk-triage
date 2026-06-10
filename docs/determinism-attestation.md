@@ -131,7 +131,7 @@ same submission with identical configuration.
 
 | Provider     | Model                       | Tier agreement | Disposition agreement | Confidence range |
 |--------------|-----------------------------|----------------|-----------------------|-------------------|
-| anthropic    | claude-sonnet-4-5           | TBD            | TBD                   | TBD               |
+| anthropic    | claude-sonnet-4-5           | 10/10 (tier_4_high) | 10/10 (escalate_senior_review) | 0.75 to 0.85      |
 
 Numbers are populated by the maintainer at each release using the
 measurement harness; older numbers remain in this document as a
