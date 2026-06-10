@@ -1,0 +1,50 @@
+{
+  "vendor_id": "v-glean-2026-public-001",
+  "vendor_name": "Glean Technologies, Inc.",
+  "jurisdiction": "US",
+  "primary_contact": {
+    "name": "Glean Sales",
+    "email": "sales@glean.com"
+  },
+  "vendor_classification": "SaaS",
+  "ai_usage_level": "productivity_only",
+  "documentation_artifacts": [
+    {
+      "artifact_type": "privacy_policy",
+      "reference": "https://www.glean.com/privacy",
+      "content_hash": "sha256:62ffa1a9e440ffca56d252ec953f2c3d9a173c0f679662b3f2139b7ba8f9a8b0"
+    },
+    {
+      "artifact_type": "other",
+      "reference": "https://www.glean.com/trust",
+      "content_hash": "sha256:9913fffc0340e7d86954d84fa3a9472671592b7d6528f58f44354ebdaff6308a"
+    },
+    {
+      "artifact_type": "other",
+      "reference": "https://www.glean.com/security",
+      "content_hash": "sha256:1b4f9d6cfa41007872b40d6459e4ee9ed9fde0a158bddeecd90f957dbb71b00b"
+    },
+    {
+      "artifact_type": "other",
+      "reference": "https://www.glean.com",
+      "content_hash": "sha256:9c71fd103c189dfeff13bb76e293cd6c2cf33762e68f22f1966d9f1ddcb1dcfc"
+    }
+  ],
+  "submission_timestamp": "2026-06-03T01:53:00Z",
+  "schema_version": "1.0.0",
+  "ai_features_disclosed": [
+    {
+      "feature_name": "Workplace search + AI assistant",
+      "description": "Enterprise search across SaaS apps (Slack, Drive, Confluence, Salesforce) with generative AI answers grounded in retrieved enterprise content. Personalized via per-user permission-aware indexing.",
+      "decision_role": "supporting",
+      "autonomy": "human_confirmed"
+    }
+  ],
+  "model_providers": ["OpenAI", "Anthropic", "internal"],
+  "pii_processing_claims": {
+    "processes_pii": true,
+    "categories": ["unstructured_document_content", "internal_communications", "employee_identifiers"],
+    "handling_notes": "Glean indexes content across customer SaaS surface which may include PII in documents, chat logs, CRM records, and HR systems. Per-user permission filtering is the primary control claim. Specific retention, training data segregation between customers, and cross-border processing gated behind customer DPA / SOC 2. Public-only first-pass triage."
+  },
+  "ai_act_self_classification": "limited_risk"
+}

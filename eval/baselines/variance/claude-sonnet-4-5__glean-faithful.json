@@ -1,0 +1,47 @@
+{
+  "model": "anthropic:claude-sonnet-4-5",
+  "runs_requested": 10,
+  "runs_successful": 10,
+  "submission": "/tmp/glean-faithful-valid.json",
+  "framework_version": "vrt-agent-v1.0.5-anthropic-claude-sonnet-4-5-prompt-69ef583c6dbe",
+  "fields": {
+    "risk_tier": {
+      "unique_values": [
+        "tier_3_elevated"
+      ],
+      "counts": {
+        "tier_3_elevated": 10
+      },
+      "majority_ratio": 1.0,
+      "n": 10
+    },
+    "recommended_disposition": {
+      "unique_values": [
+        "escalate_senior_review"
+      ],
+      "counts": {
+        "escalate_senior_review": 10
+      },
+      "majority_ratio": 1.0,
+      "n": 10
+    },
+    "confidence_signal.score": {
+      "min": 0.55,
+      "max": 0.65,
+      "mean": 0.5800000000000001,
+      "stdev": 0.04830458915396479,
+      "range": 0.09999999999999998,
+      "n": 10
+    },
+    "evidence_cited.count": {
+      "min": 8,
+      "max": 9,
+      "mean": 8.4,
+      "stdev": 0.5163977794943223,
+      "range": 1,
+      "n": 10
+    }
+  },
+  "tier_split_max_ratio": 1.0,
+  "disposition_split_max_ratio": 1.0
+}

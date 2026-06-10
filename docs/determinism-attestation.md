@@ -122,16 +122,46 @@ fields.
 
 ## Variance band (empirical)
 
-The contract attests reproducibility WITHIN an empirically-measured
-band specific to each (provider, model) pair. The band is not zero:
-temperature=0 reduces but does not eliminate model-internal sampling
-variation. Numbers below are measured by
-`scripts/measure_determinism_variance.py` running ten triages of the
-same submission with identical configuration.
+The contract attests reproducibility WITHIN an empirically-measured band.
+The band is measured PER SUBMISSION at temperature 0; the per-model
+figure quoted for a (provider, model) pair is the envelope across the
+submissions measured so far. The band is not zero: temperature 0 reduces
+but does not eliminate model-internal sampling variation. Numbers below
+are measured by `scripts/measure_determinism_variance.py` running ten
+triages of the named submission with identical configuration. Raw
+harness baselines for every committed row are under
+`eval/baselines/variance/`; derived inputs that are not in the repo's
+example fixtures are under `eval/baselines/variance/inputs/`.
 
-| Provider     | Model                       | Tier agreement | Disposition agreement | Confidence range |
-|--------------|-----------------------------|----------------|-----------------------|-------------------|
-| anthropic    | claude-sonnet-4-5           | 10/10 (tier_4_high) | 10/10 (escalate_senior_review) | 0.75 to 0.85      |
+| Submission | Tier agreement | Disposition agreement | Confidence range | Evidence rows |
+|------------|----------------|-----------------------|-------------------|---------------|
+| `examples/submissions/02-tier2-customer-service-chatbot.json` [^chatbot-fixture] | 10/10 `tier_4_high` | 10/10 `escalate_senior_review` | 0.75 to 0.85 | 10 to 13 |
+| Glean, faithful low usage level (`eval/baselines/variance/inputs/glean-faithful.input.json`) | 10/10 `tier_3_elevated` | 10/10 `escalate_senior_review` | 0.55 to 0.65 | 8 to 9 |
+| Glean, escalated usage level (`eval/baselines/variance/inputs/glean-escalated.input.json`) | 10/10 `tier_3_elevated` | 10/10 `escalate_senior_review` | 0.65 to 0.75 | 7 to 11 |
+
+A contract-valid Glean submission reproduces `tier_3_elevated` 10/10 at
+temperature 0, and the tier holds across two valid renderings of the
+same content (faithful low usage level and a more escalated valid
+usage level). The raw harness baselines for all three rows are under
+`eval/baselines/variance/`.
+
+Provenance for the Glean rows: the original on-disk submission at
+`~/sitkastack-runs/2026-06-02/glean/glean-submission.json` declares
+`ai_usage_level: informational`, which is not in the v1.4.0 input
+contract enum and therefore cannot be run through
+`schemas.validate.validate_input`. The two Glean rows are valid
+renderings derived from that content: the faithful row uses the
+lowest valid usage level (`productivity_only`), the escalated row uses
+`operational_decisions`. Both rendered inputs are committed under
+`eval/baselines/variance/inputs/` so each row is reproducible.
+
+[^chatbot-fixture]: The fixture filename labels this submission `tier2`
+    but the current framework classifies it `tier_4_high` 10/10 (the
+    PII processing claims and customer-facing posture in the body
+    dominate the tier signal). Whether the fixture name is stale, the
+    submission body is stronger than the name suggests, or the agent
+    is over-escalating a genuinely tier-2 scenario is an open question
+    tracked separately; the fixture is not renamed here.
 
 Numbers are populated by the maintainer at each release using the
 measurement harness; older numbers remain in this document as a
@@ -153,60 +183,6 @@ python scripts/measure_determinism_variance.py \
 
 The output JSON contains `fields.risk_tier.majority_ratio`,
 `fields.confidence_signal.score.range`, etc.
-
-## Boundary case stability
-
-The variance band above measures the per-(provider, model) reproducibility of
-a representative submission. A more pointed question for an auditor evaluating
-the determinism contract: does the contract HOLD a classification that
-previously flipped at the tier boundary?
-
-Setup. A vendor risk submission for Glean Technologies that, prior to the
-1.0.5 temperature pin, returned `tier_2_moderate` on some runs and
-`tier_3_elevated` on others against an otherwise-identical configuration
-(same framework version, same submission, same model) was re-measured under
-the 1.0.5 contract: ten sequential triages against
-`anthropic:claude-sonnet-4-5` with `temperature=0`, the framework's default
-`SYSTEM_PROMPT` (hash `69ef583c6dbe`), no corpus loaded, no fallback
-configured. Configuration is recorded on every record's
-`determinism_attestation`.
-
-Result.
-
-| Field                       | Outcome                                    |
-|-----------------------------|--------------------------------------------|
-| `risk_tier`                 | 10 of 10 `tier_3_elevated`                 |
-| `recommended_disposition`   | 10 of 10 `escalate_senior_review`          |
-| `confidence_signal.score`   | 0.65 to 0.75 (mean 0.71, stdev 0.044)      |
-| `evidence_cited` count      | 7 to 11 (mean 8.5; text variance, not classification variance) |
-| `contract_honored`          | true on all 10 records by inspection of producing configuration (temperature 0, default prompt, anthropic provider, no fallback fired) |
-
-Interpretation. The temperature pin held the tier on the specific submission
-that had been the most visible failure case prior to 1.0.5. `tier_3_elevated`
-is the model's converged answer when the temperature noise is removed; the
-prior `tier_2_moderate` observations were the noise pulling the
-classification one band toward the more permissive disposition. The
-contract's commitment of reproducibility within the per-(provider, model)
-variance band held on the boundary case, not only on the generic one.
-
-Provenance. The Glean submission was normalized from its source form into the
-v1.4.0 input contract before measurement: four enum values that post-dated
-the original capture were mapped to current-contract values
-(`ai_usage_level: informational` to `operational_decisions`; three
-`documentation_artifacts[].artifact_type` values `public_security_page` and
-`marketing_page` to `other`; `ai_features_disclosed[0].decision_role:
-informational` to `supporting`). The original on-disk submission at
-`~/sitkastack-runs/2026-06-02/glean/glean-submission.json` was not edited;
-the normalized copy lived at `/tmp/glean-submission-normalized.json` for the
-duration of the measurement. The raw harness report is archived at
-`~/sitkastack-runs/2026-06-10-newsletter/variance-glean-boundary.json`.
-
-Scope limits. This result is one submission against one model on one
-calendar date. It is decisive evidence that the determinism contract reduces
-the previously-observed flip on this submission to zero. It is not, by
-itself, evidence that the contract eliminates every boundary case. Operators
-wanting confidence on their own boundary submissions run the same harness
-against them and publish their numbers.
 
 ## Exiting the contract intentionally
 

@@ -1,0 +1,47 @@
+{
+  "model": "anthropic:claude-sonnet-4-5",
+  "runs_requested": 10,
+  "runs_successful": 10,
+  "submission": "examples/submissions/02-tier2-customer-service-chatbot.json",
+  "framework_version": "vrt-agent-v1.0.5-anthropic-claude-sonnet-4-5-prompt-69ef583c6dbe",
+  "fields": {
+    "risk_tier": {
+      "unique_values": [
+        "tier_4_high"
+      ],
+      "counts": {
+        "tier_4_high": 10
+      },
+      "majority_ratio": 1.0,
+      "n": 10
+    },
+    "recommended_disposition": {
+      "unique_values": [
+        "escalate_senior_review"
+      ],
+      "counts": {
+        "escalate_senior_review": 10
+      },
+      "majority_ratio": 1.0,
+      "n": 10
+    },
+    "confidence_signal.score": {
+      "min": 0.75,
+      "max": 0.85,
+      "mean": 0.82,
+      "stdev": 0.04830458915396479,
+      "range": 0.09999999999999998,
+      "n": 10
+    },
+    "evidence_cited.count": {
+      "min": 10,
+      "max": 13,
+      "mean": 11.9,
+      "stdev": 0.8755950357709131,
+      "range": 3,
+      "n": 10
+    }
+  },
+  "tier_split_max_ratio": 1.0,
+  "disposition_split_max_ratio": 1.0
+}
