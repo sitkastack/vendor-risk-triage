@@ -60,6 +60,13 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).parent.parent
 
+# Self-bootstrap: put the repo root on sys.path so the framework's flat-layout
+# packages (agent/, schemas/, etc.) are importable when this script is invoked
+# directly as `python scripts/measure_determinism_variance.py ...` rather than
+# from a context that already has them on the path.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 
 def _summarize_categorical(values: list[Any]) -> dict[str, Any]:
     counts = Counter(values)
