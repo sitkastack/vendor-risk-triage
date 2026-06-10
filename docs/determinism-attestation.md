@@ -154,6 +154,60 @@ python scripts/measure_determinism_variance.py \
 The output JSON contains `fields.risk_tier.majority_ratio`,
 `fields.confidence_signal.score.range`, etc.
 
+## Boundary case stability
+
+The variance band above measures the per-(provider, model) reproducibility of
+a representative submission. A more pointed question for an auditor evaluating
+the determinism contract: does the contract HOLD a classification that
+previously flipped at the tier boundary?
+
+Setup. A vendor risk submission for Glean Technologies that, prior to the
+1.0.5 temperature pin, returned `tier_2_moderate` on some runs and
+`tier_3_elevated` on others against an otherwise-identical configuration
+(same framework version, same submission, same model) was re-measured under
+the 1.0.5 contract: ten sequential triages against
+`anthropic:claude-sonnet-4-5` with `temperature=0`, the framework's default
+`SYSTEM_PROMPT` (hash `69ef583c6dbe`), no corpus loaded, no fallback
+configured. Configuration is recorded on every record's
+`determinism_attestation`.
+
+Result.
+
+| Field                       | Outcome                                    |
+|-----------------------------|--------------------------------------------|
+| `risk_tier`                 | 10 of 10 `tier_3_elevated`                 |
+| `recommended_disposition`   | 10 of 10 `escalate_senior_review`          |
+| `confidence_signal.score`   | 0.65 to 0.75 (mean 0.71, stdev 0.044)      |
+| `evidence_cited` count      | 7 to 11 (mean 8.5; text variance, not classification variance) |
+| `contract_honored`          | true on all 10 records by inspection of producing configuration (temperature 0, default prompt, anthropic provider, no fallback fired) |
+
+Interpretation. The temperature pin held the tier on the specific submission
+that had been the most visible failure case prior to 1.0.5. `tier_3_elevated`
+is the model's converged answer when the temperature noise is removed; the
+prior `tier_2_moderate` observations were the noise pulling the
+classification one band toward the more permissive disposition. The
+contract's commitment of reproducibility within the per-(provider, model)
+variance band held on the boundary case, not only on the generic one.
+
+Provenance. The Glean submission was normalized from its source form into the
+v1.4.0 input contract before measurement: four enum values that post-dated
+the original capture were mapped to current-contract values
+(`ai_usage_level: informational` to `operational_decisions`; three
+`documentation_artifacts[].artifact_type` values `public_security_page` and
+`marketing_page` to `other`; `ai_features_disclosed[0].decision_role:
+informational` to `supporting`). The original on-disk submission at
+`~/sitkastack-runs/2026-06-02/glean/glean-submission.json` was not edited;
+the normalized copy lived at `/tmp/glean-submission-normalized.json` for the
+duration of the measurement. The raw harness report is archived at
+`~/sitkastack-runs/2026-06-10-newsletter/variance-glean-boundary.json`.
+
+Scope limits. This result is one submission against one model on one
+calendar date. It is decisive evidence that the determinism contract reduces
+the previously-observed flip on this submission to zero. It is not, by
+itself, evidence that the contract eliminates every boundary case. Operators
+wanting confidence on their own boundary submissions run the same harness
+against them and publish their numbers.
+
 ## Exiting the contract intentionally
 
 To opt out for exploration or eval use:
